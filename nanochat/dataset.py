@@ -20,9 +20,10 @@ from nanochat.common import get_base_dir
 # The specifics of the current pretraining dataset
 
 # The URL on the internet where the data is hosted and downloaded from on demand
-BASE_URL = "https://huggingface.co/datasets/karpathy/fineweb-edu-100b-shuffle/resolve/main"
-MAX_SHARD = 1822 # the last datashard is shard_01822.parquet
-index_to_filename = lambda index: f"shard_{index:05d}.parquet" # format of the filenames
+#BASE_URL = "https://huggingface.co/datasets/karpathy/fineweb-edu-100b-shuffle/resolve/main"
+BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/blob/main/data"
+MAX_SHARD = 1573 # the last datashard is shard_01822.parquet
+index_to_filename = lambda index: f"train-{index:05d}-of-01573.parquet" # format of the filenames
 base_dir = get_base_dir()
 DATA_DIR = os.path.join(base_dir, "base_data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -53,8 +54,13 @@ def parquets_iter_batched(split, start=0, step=1):
         pf = pq.ParquetFile(filepath)
         for rg_idx in range(start, pf.num_row_groups, step):
             rg = pf.read_row_group(rg_idx)
+            # Filter rows where label equals 1 first
+            labels = rg.column('label').to_pylist()
+            label_mask = [label == 1 for label in labels]
+            # Only extract text for filtered rows
             texts = rg.column('text').to_pylist()
-            yield texts
+            filtered_texts = [text for text, keep in zip(texts, label_mask) if keep]
+            yield filtered_texts
 
 # -----------------------------------------------------------------------------
 def download_single_file(index):
@@ -110,7 +116,7 @@ def download_single_file(index):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download FineWeb-Edu 100BT dataset shards")
+    parser = argparse.ArgumentParser(description="Download TucanoBR/GigaVerbo 411GB dataset shards")
     parser.add_argument("-n", "--num-files", type=int, default=-1, help="Number of shards to download (default: -1), -1 = disable")
     parser.add_argument("-w", "--num-workers", type=int, default=4, help="Number of parallel download workers (default: 4)")
     args = parser.parse_args()
