@@ -5,7 +5,7 @@ Common utilities for nanochat.
 import os
 import re
 import logging
-import fcntl
+#import fcntl
 import urllib.request
 import torch
 import torch.distributed as dist
