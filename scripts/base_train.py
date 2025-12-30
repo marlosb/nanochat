@@ -12,7 +12,7 @@ python -m scripts.base_train --depth=4 --max_seq_len=512 --device_batch_size=1 -
 """
 
 import os
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import time
 from contextlib import nullcontext
 
@@ -205,6 +205,7 @@ if not resuming:
 else:
     step = meta_data["step"]
     loop_state = meta_data["loop_state"]
+    val_bpb = meta_data["val_bpb"]
     min_val_bpb = loop_state["min_val_bpb"]
     smooth_train_loss = loop_state["smooth_train_loss"]
     total_training_time = loop_state["total_training_time"]
