@@ -7,12 +7,11 @@ from nanochat.dataset import parquets_iter_batched
 
 # Random text I got from a random website this morning
 news_text = r"""
-(Washington, D.C., July 9, 2025)- Yesterday, Mexico’s National Service of Agro-Alimentary Health, Safety, and Quality (SENASICA) reported a new case of New World Screwworm (NWS) in Ixhuatlan de Madero, Veracruz in Mexico, which is approximately 160 miles northward of the current sterile fly dispersal grid, on the eastern side of the country and 370 miles south of the U.S./Mexico border. This new northward detection comes approximately two months after northern detections were reported in Oaxaca and Veracruz, less than 700 miles away from the U.S. border, which triggered the closure of our ports to Mexican cattle, bison, and horses on May 11, 2025.
+(Washington, D.C., 9 de julho de 2025) – Ontem, o Serviço Nacional de Sanidade, Inocuidade e Qualidade Agroalimentar do México (SENASICA) relatou um novo caso de miíase causada pelo berne-do-novo-mundo (NWS, na sigla em inglês) em Ixhuatlán de Madero, Veracruz, no México, que fica aproximadamente 257 quilômetros ao norte da atual área de dispersão da mosca estéril, no lado leste do país e a 595 quilômetros ao sul da fronteira entre os EUA e o México. Essa nova detecção ao norte ocorre cerca de dois meses após registros anteriores em Oaxaca e Veracruz, a menos de 1.126 quilômetros da fronteira dos EUA, o que levou ao fechamento de nossos portos para bovinos, bisões e cavalos mexicanos em 11 de maio de 2025.
 
-While USDA announced a risk-based phased port re-opening strategy for cattle, bison, and equine from Mexico beginning as early as July 7, 2025, this newly reported NWS case raises significant concern about the previously reported information shared by Mexican officials and severely compromises the outlined port reopening schedule of five ports from July 7-September 15. Therefore, in order to protect American livestock and our nation’s food supply, Secretary Rollins has ordered the closure of livestock trade through southern ports of entry effective immediately.
+Embora o USDA tenha anunciado uma estratégia de reabertura gradual e baseada em risco dos portos para bovinos, bisões e equídeos provenientes do México a partir de 7 de julho de 2025, este novo caso de berne-do-novo-mundo relatado levanta preocupações significativas sobre as informações previamente compartilhadas por autoridades mexicanas e compromete seriamente o cronograma de reabertura de cinco portos previsto para o período de 7 de julho a 15 de setembro. Portanto, para proteger o rebanho americano e o abastecimento alimentar do nosso país, a Secretária Rollins ordenou o fechamento imediato do comércio de animais vivos através dos portos de entrada ao sul.
 
-“The United States has promised to be vigilant — and after detecting this new NWS case, we are pausing the planned port reopening’s to further quarantine and target this deadly pest in Mexico. We must see additional progress combatting NWS in Veracruz and other nearby Mexican states in order to reopen livestock ports along the Southern border,” said U.S. Secretary of Agriculture Brooke L. Rollins. “Thanks to the aggressive monitoring by USDA staff in the U.S. and in Mexico, we have been able to take quick and decisive action to respond to the spread of this deadly pest.”
-""".strip()
+"Os Estados Unidos prometeram ser vigilantes — e, após a detecção deste novo caso de berne-do-novo-mundo, estamos pausando as reaberturas planejadas dos portos para intensificar a quarentena e combater esta praga mortal no México. Precisamos ver avanços adicionais no combate ao berne-do-novo-mundo em Veracruz e outros estados mexicanos próximos para reabrir os portos de entrada de animais vivos na fronteira sul," disse a Secretária de Agricultura dos EUA, Brooke L. Rollins. "Graças à rigorosa vigilância das equipes do USDA nos EUA e no México, conseguimos agir de forma rápida e decisiva para responder à disseminação desta praga mortal.""".strip()
 
 # Random Korean text (to test non-English compression)
 korean_text = r"""
@@ -75,72 +74,72 @@ math_text = r"""
 \begin{document}
 
 \begin{center}
-{\Large A Cute Identity: The Sum of Cubes is a Square}
+{\Large Uma Identidade Fofa: A Soma de Cubos é um Quadrado}
 \end{center}
 
 \begin{theorem}
-For every integer $n \ge 1$,
+Para todo número inteiro $n \ge 1$,
 \[
 \sum_{k=1}^{n} k^{3} \;=\; \left(\frac{n(n+1)}{2}\right)^{2}.
 \]
 \end{theorem}
 
-\begin{proof}[Proof 1 (Induction)]
-Let $S(n) = \sum_{k=1}^{n} k^3$. For $n=1$, $S(1)=1=(1\cdot 2/2)^2$, so the base case holds.
+\begin{proof}[Prova 1 (Indução)]
+Deixe $S(n) = \sum_{k=1}^{n} k^3$. Para $n=1$, $S(1)=1=(1\cdot 2/2)^2$, então o caso base é válido.
 
-Assume $S(n)=\big(\tfrac{n(n+1)}{2}\big)^2$ for some $n\ge 1$.
-Then
+Assuma que $S(n)=\big(\tfrac{n(n+1)}{2}\big)^2$ para algum $n\ge 1$.
+Então
 \[
 S(n+1)
 = S(n) + (n+1)^3
 = \left(\frac{n(n+1)}{2}\right)^2 + (n+1)^3.
 \]
-Factor out $(n+1)^2$:
+Fatorando $(n+1)^2$:
 \[
 S(n+1)
 = (n+1)^2\left( \frac{n^2}{4} + (n+1) \right)
 = (n+1)^2\left( \frac{n^2 + 4n + 4}{4} \right)
 = (n+1)^2\left( \frac{(n+2)^2}{4} \right).
 \]
-Thus
+Assim
 \[
 S(n+1)=\left(\frac{(n+1)(n+2)}{2}\right)^2,
 \]
-which matches the claimed formula with $n$ replaced by $n+1$. By induction, the identity holds for all $n\ge 1$.
+que corresponde à fórmula afirmada com $n$ substituído por $n+1$. Por indução, a identidade vale para todo $n\ge 1$.
 \end{proof}
 
-\begin{proof}[Proof 2 (Algebraic telescoping)]
-Recall the binomial identity
+\begin{proof}[Prova 2 (Telescoping algébrico)]
+Recorde a identidade binomial
 \[
 (k+1)^4 - k^4 = 4k^3 + 6k^2 + 4k + 1.
 \]
-Summing both sides from $k=0$ to $n$ telescopes:
-\[
+Somando ambos os lados de $k=0$ a $n$ telescopa:
+\[\
 (n+1)^4 - 0^4
 = \sum_{k=0}^{n}\big(4k^3 + 6k^2 + 4k + 1\big)
 = 4\sum_{k=1}^{n}k^3 + 6\sum_{k=1}^{n}k^2 + 4\sum_{k=1}^{n}k + (n+1).
 \]
-Using the standard sums
+Usando as somas padrão
 \[
 \sum_{k=1}^{n}k = \frac{n(n+1)}{2}
 \quad\text{and}\quad
 \sum_{k=1}^{n}k^2 = \frac{n(n+1)(2n+1)}{6},
 \]
-solve for $\sum_{k=1}^{n}k^3$ to get
+resolvendo para $\sum_{k=1}^{n}k^3$ obtemos
 \[
 \sum_{k=1}^{n}k^3 = \left(\frac{n(n+1)}{2}\right)^2.
 \]
 \end{proof}
 
 \begin{remark}
-Geometrically, the identity says: ``adding up $1^3,2^3,\dots,n^3$ builds a perfect square’’—namely the square of the $n$th triangular number. This is why one sometimes calls it the \emph{sum-of-cubes is a square} phenomenon.
+Geometricamente, a identidade diz: ``somar $1^3,2^3,\dots,n^3$ constrói um quadrado perfeito’’—nomeadamente o quadrado do $n$-ésimo número triangular. É por isso que às vezes se chama ao fenômeno \emph{soma dos cubos é um quadrado}.
 \end{remark}
 
 \end{document}
 """.strip()
 
 science_text = r"""
-Photosynthesis is a photochemical energy transduction process in which light-harvesting pigment–protein complexes within the thylakoid membranes of oxygenic phototrophs absorb photons and initiate charge separation at the reaction center, driving the linear electron transport chain from water to NADP⁺ via photosystem II, the cytochrome b₆f complex, and photosystem I, concomitantly generating a trans-thylakoid proton motive force utilized by chloroplastic ATP synthase. The light-dependent reactions produce ATP and NADPH, which fuel the Calvin–Benson–Bassham cycle in the stroma, wherein ribulose-1,5-bisphosphate is carboxylated by ribulose-1,5-bisphosphate carboxylase/oxygenase (RuBisCO) to form 3-phosphoglycerate, subsequently reduced and regenerated through a series of enzymatic steps, enabling net assimilation of CO₂ into triose phosphates and ultimately carbohydrates. This process is tightly regulated by photoprotective mechanisms, redox feedback, and metabolite flux, representing a central biochemical pathway coupling solar energy capture to the biosphere’s primary productivity.
+A fotossíntese é um processo de transdução de energia fotquímica no qual complexos pigmento-proteína captadores de luz, localizados nas membranas dos tilacoides de fototróficos oxigênicos, absorvem fótons e iniciam a separação de cargas no centro de reação, impulsionando a cadeia de transporte eletrônico linear da água ao NADP⁺ via fotossistema II, o complexo citocromo b₆f e o fotossistema I, gerando concomitantemente uma força motriz próton trans-tilacoide utilizada pela ATP sintase cloroplástica. As reações dependentes da luz produzem ATP e NADPH, que alimentam o ciclo Calvin–Benson–Bassham no estroma, onde a ribulose-1,5-bisfosfato é carboxilada pela ribulose-1,5-bisfosfato carboxilase/oxigenase (RuBisCO) para formar 3-fosfoglicerato, subsequentemente reduzido e regenerado através de uma série de etapas enzimáticas, permitindo a assimilação líquida de CO₂ em trioses fosfatos e, finalmente, carboidratos. Este processo é rigidamente regulado por mecanismos fotoprotetores, feedback redox e fluxo de metabólitos, representando uma via bioquímica central que acopla a captura de energia solar à produtividade primária da biosfera.
 """.strip()
 
 # The tokenizer was trained on data from earlier shards, so it has seen this data
