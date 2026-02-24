@@ -21,7 +21,7 @@ from nanochat.common import get_base_dir
 
 # The URL on the internet where the data is hosted and downloaded from on demand
 #BASE_URL = "https://huggingface.co/datasets/karpathy/fineweb-edu-100b-shuffle/resolve/main"
-BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/resolve/main/data"
+BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/blob/main/data"
 MAX_SHARD = 1573 # the last datashard is shard_01822.parquet
 index_to_filename = lambda index: f"train-{index:05d}-of-01573.parquet" # format of the filenames
 base_dir = get_base_dir()
@@ -51,8 +51,17 @@ def parquets_iter_batched(split, start=0, step=1):
     parquet_paths = list_parquet_files()
     parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
     for filepath in parquet_paths:
-        print(f"Loading parquet file: {filepath}")
-        pf = pq.ParquetFile(filepath)
+        try:
+            pf = pq.ParquetFile(filepath)
+        except Exception as e:
+            print(f"WARNING: Skipping corrupted or invalid parquet file: {filepath}")
+            print(f"Error: {e}")
+            print(f"You may need to delete this file and re-download it.")
+            # Remove corrupted file to allow re-download
+            if os.path.exists(filepath):
+                print(f"Removing corrupted file: {filepath}")
+                os.remove(filepath)
+            continue
         for rg_idx in range(start, pf.num_row_groups, step):
             rg = pf.read_row_group(rg_idx)
             # Filter rows where label equals 1 first
@@ -92,8 +101,18 @@ def download_single_file(index):
                         f.write(chunk)
             # Move temp file to final location
             os.rename(temp_path, filepath)
-            print(f"Successfully downloaded {filename}")
-            return True
+            # Validate the parquet file
+            try:
+                test_pf = pq.ParquetFile(filepath)
+                test_pf.metadata  # Try to read metadata to ensure file is valid
+                print(f"Successfully downloaded and validated {filename}")
+                return True
+            except Exception as e:
+                print(f"Downloaded file {filename} is corrupted or invalid: {e}")
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                # Continue to retry logic below
+                raise
 
         except (requests.RequestException, IOError) as e:
             print(f"Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
