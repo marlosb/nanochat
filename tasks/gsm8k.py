@@ -1,15 +1,16 @@
 """
-GSM8K evaluation.
-https://huggingface.co/datasets/openai/gsm8k
+GSM8K evaluation. Updated to portuguese translated version
+https://huggingface.co/datasets/marlosb/gsm8k-pt
 
 Example problem instance:
 
 Question:
-Weng earns $12 an hour for babysitting. Yesterday, she just did 50 minutes of babysitting. How much did she earn?
+Natália vendeu clipes para 48 de seus amigos em abril, e depois vendeu a metade 
+de clipes em maio. Quantos clipes Natália vendeu ao todo em abril e maio?
 Answer:
-Weng earns 12/60 = $<<12/60=0.2>>0.2 per minute.
-Working 50 minutes, she earned 0.2 x 50 = $<<0.2*50=10>>10.
-#### 10
+Natália vendeu 48/2 = <<48/2=24>>24 clipes em maio.
+Natália vendeu 48+24 = <<48+24=72>>72 clipes ao todo em abril e maio.
+#### 72
 
 Notice that GSM8K uses tool calls inside << >> tags.
 """
@@ -40,7 +41,8 @@ class GSM8K(Task):
         super().__init__(**kwargs)
         assert subset in ["main", "socratic"], "GSM8K subset must be main|socratic"
         assert split in ["train", "test"], "GSM8K split must be train|test"
-        self.ds = load_dataset("openai/gsm8k", subset, split=split).shuffle(seed=42)
+        config = "default" if subset == "main" else subset
+        self.ds = load_dataset("marlosb/gsm8k-pt", config, split=split).shuffle(seed=42)
 
     @property
     def eval_type(self):
