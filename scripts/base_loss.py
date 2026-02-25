@@ -17,8 +17,8 @@ from nanochat.loss_eval import evaluate_bpb
 from nanochat.engine import Engine
 
 # Configuration
-device_batch_size = 32
-split_tokens = 20*524288  # number of tokens to evaluate per split
+device_batch_size = 8
+split_tokens = 20*32768  # number of tokens to evaluate per split
 model_tag = None # optional model tag for the output directory name
 model_step = None # optional model step for the output directory name
 device_type = "" # cuda|cpu|mps (empty => autodetect)
