@@ -1,6 +1,6 @@
 """
-SmolTalk by HuggingFace. Good "general" conversational dataset.
-https://huggingface.co/datasets/HuggingFaceTB/smol-smoltalk
+Translated version of SmolTalk by HuggingFace. Good "general" conversational dataset.
+https://huggingface.co/datasets/marlosb/smol-smoltalk-pt
 We use the "smol" version, which is more appropriate for smaller models.
 """
 
@@ -8,12 +8,12 @@ from datasets import load_dataset
 from tasks.common import Task
 
 class SmolTalk(Task):
-    """ smol-smoltalk dataset. train is 460K rows, test is 24K rows. """
+    """ smol-smoltalk dataset. train is 460K ish rows, test is 24K ish rows. """
 
     def __init__(self, split, **kwargs):
         super().__init__(**kwargs)
         assert split in ["train", "test"], "SmolTalk split must be train|test"
-        self.ds = load_dataset("HuggingFaceTB/smol-smoltalk", split=split).shuffle(seed=42)
+        self.ds = load_dataset("marlosb/smol-smoltalk-pt", split=split).shuffle(seed=42)
         self.length = len(self.ds)
 
     def num_examples(self):
