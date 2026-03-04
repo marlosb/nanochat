@@ -19,11 +19,9 @@ from nanochat.common import compute_init, compute_cleanup, get_dist_info, print0
 from nanochat.checkpoint_manager import load_model
 from nanochat.engine import Engine
 
-from tasks.humaneval import HumanEval
 from tasks.mmlu import MMLU
 from tasks.arc import ARC
 from tasks.gsm8k import GSM8K
-from tasks.spellingbee import SpellingBee
 
 # -----------------------------------------------------------------------------
 # Generative evaluation loop (we go one problem at a time, sample, evaluate)
@@ -161,12 +159,10 @@ def run_chat_eval(task_name, model, tokenizer, engine,
                    max_problems=None):
     # Create the evaluation object
     task_module = {
-        'HumanEval': HumanEval,
         'MMLU': partial(MMLU, subset="all", split="test"),
         'ARC-Easy': partial(ARC, subset="ARC-Easy", split="test"),
         'ARC-Challenge': partial(ARC, subset="ARC-Challenge", split="test"),
-        'GSM8K': partial(GSM8K, subset="main", split="test"),
-        'SpellingBee': partial(SpellingBee, size=256, split="test"),
+        'GSM8K': partial(GSM8K, subset="main", split="test")
     }[task_name]
     task_object = task_module()
     # Run the evaluation
