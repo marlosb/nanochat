@@ -20,8 +20,7 @@ from nanochat.common import get_base_dir
 # The specifics of the current pretraining dataset
 
 # The URL on the internet where the data is hosted and downloaded from on demand
-#BASE_URL = "https://huggingface.co/datasets/karpathy/fineweb-edu-100b-shuffle/resolve/main"
-BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/blob/main/data"
+BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/resolve/main/data"
 MAX_SHARD = 1574 # the last datashard is train-00000-01573.parquet
 index_to_filename = lambda index: f"train-{index:05d}-of-01573.parquet" # format of the filenames
 base_dir = get_base_dir()
