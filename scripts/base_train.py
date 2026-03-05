@@ -31,9 +31,9 @@ print_banner()
 
 # -----------------------------------------------------------------------------
 # User settings
-run = "february" # wandb run name default ("dummy" is special - we won't log to wandb)
+run = "dummy" # wandb run name default ("dummy" is special - we won't log to wandb)
 # Runtime
-device_type = "cuda" # cuda|cpu|mps (empty => autodetect good device type default, in order: CUDA > MPS > CPU)
+device_type = "" # cuda|cpu|mps (empty => autodetect good device type default, in order: CUDA > MPS > CPU)
 # Model architecture
 depth = 24 # the depth of the Transformer model to train, rest of the kwargs are derived
 max_seq_len = 2048 # max context length
