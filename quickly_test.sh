@@ -45,10 +45,11 @@ python -m scripts.tok_eval
 # Calculated number of iterations from target data:param ratio: 
 # Total number of training tokens: 2,768,240,640
 # Tokens : Params ratio: 30.00
+# Total training FLOPs estimate: 1.044976e+18
 # ...
 
 python -m scripts.base_train --depth=8 --total_batch_size=16384 --max_seq_len=512
-python -m scipts.base_loss --split_tokens=16384
+python -m scripts.base_loss --split_tokens=16384
 python -m scripts.base_eval
 
 # midtrain
