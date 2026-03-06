@@ -41,8 +41,7 @@ class GSM8K(Task):
         super().__init__(**kwargs)
         assert subset in ["main", "socratic"], "GSM8K subset must be main|socratic"
         assert split in ["train", "test"], "GSM8K split must be train|test"
-        config = "default" if subset == "main" else subset
-        self.ds = load_dataset("marlosb/gsm8k-pt", config, split=split).shuffle(seed=42)
+        self.ds = load_dataset("marlosb/gsm8k-pt", subset, split=split).shuffle(seed=42)
 
     @property
     def eval_type(self):
