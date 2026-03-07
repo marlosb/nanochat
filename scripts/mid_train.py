@@ -37,15 +37,15 @@ step = None # step to load the model from (base model or midtrained model)
 dtype = "bfloat16"
 num_iterations = -1 # explicit number of steps of the optimization (-1 = disable)
 max_seq_len = 2048
-device_batch_size = 32
+device_batch_size = 8
 unembedding_lr = 0.004
 embedding_lr = 0.2
 matrix_lr = 0.02
 init_lr_frac = 1.0 # initial learning rate is this fraction of the base learning rate
 weight_decay = 0.0
 eval_every = 150 # -1 = disable
-eval_tokens = 20*524288
-total_batch_size = 524288
+eval_tokens = 20*32768
+total_batch_size = 32768
 dry_run = 0 # dry_run=1 is for experiments: we will log to wandb but we won't write checkpoints or report
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open(os.path.join('nanochat', 'configurator.py')).read()) # overrides from command line or config file
