@@ -52,6 +52,7 @@ echo ""
 echo "#### Starting base_train"
 echo ""
 python -m scripts.base_train --depth=8 --total_batch_size=16384 --max_seq_len=512 --sample_every=100000 --save_every=100000
+echo ""
 echo "#### base_train complete"
 echo "#### starting base_loss"
 echo ""
@@ -69,6 +70,7 @@ echo ""
 # midtrain
 # NOTE: ensure that we use the same device_batch_size here as the base training script.
 python -m scripts.mid_train --device_batch_size=8 --max_seq_len=512 --eval_tokens=16384
+echo ""
 echo "#### mid_train complete"
 echo "#### starting mid_eval"
 echo ""
@@ -79,10 +81,12 @@ echo ""
 
 # sft
 python -m scripts.chat_sft
+echo ""
 echo "#### sft complete"
 echo "#### starting sft_eval"
 echo ""
 python -m scripts.chat_eval -i sft
+echo ""
 echo "#### sft_eval complete"
 echo "#### starting report generation"
 echo ""
