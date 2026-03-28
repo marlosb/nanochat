@@ -32,26 +32,27 @@ python -m scripts.tok_eval
 # This is a quickly test run, only to make sure all scrips will run fine after
 # modifing datasets used. The intetion is to run quickly in a single GPU server.
 # Testing parameters:
-# Vocab size: 65,536
-# num_layers: 24
-# model_dim: 512
-# num_heads: 4
-# num_kv_heads: 4
-# Tokens / micro-batch / rank: 8 x 512 = 4,096
-# Tokens / micro-batch: 4,096
-# Total batch size 16,384 => gradient accumulation steps: 4
-# Number of parameters:  92,274,688
-# Estimated FLOPs per token: ~ 380,000,000
-# Calculated number of iterations from target data:param ratio: 
-# Total number of training tokens: 2,768,240,640
-# Tokens : Params ratio: 30.00
-# Total training FLOPs estimate: 1.044976e+18
-# ...
+#Vocab size: 65,536
+#num_layers: 8
+#model_dim: 512
+#num_heads: 4
+#num_kv_heads: 4
+#Tokens / micro-batch / rank: 8 x 2048 = 16,384
+#Tokens / micro-batch: 16,384
+#Total batch size 16,384 => gradient accumulation steps: 1
+#Number of parameters: 92,274,688
+#Estimated FLOPs per token: 4.529848e+08
+#Calculated number of iterations from target data:param ratio: 168,960
+#Total number of training tokens: 2,768,240,640
+#Tokens : Params ratio: 30.00
+#Total training FLOPs estimate: 1.253971e+18
+#Scaling the LR for the AdamW parameters ∝1/√(512/768) = 1.224745
+
 
 echo ""
 echo "#### Starting base_train"
 echo ""
-python -m scripts.base_train --depth=8 --total_batch_size=16384 --sample_every=100000 --save_every=100000 --run=march
+python -m scripts.base_train --depth=24 --total_batch_size=16384 --sample_every=100000 --save_every=100000 --run=march
 echo ""
 echo "#### base_train complete"
 echo "#### starting base_loss"
