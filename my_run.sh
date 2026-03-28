@@ -52,7 +52,7 @@ python -m scripts.tok_eval
 echo ""
 echo "#### Starting base_train"
 echo ""
-python -m scripts.base_train --depth=24 --total_batch_size=16384 --sample_every=100000 --save_every=100000 --run=march
+python -m scripts.base_train --depth=24 --total_batch_size=32768 --sample_every=100000 --save_every=100000 --run=march
 echo ""
 echo "#### base_train complete"
 echo "#### starting base_loss"
@@ -70,7 +70,7 @@ echo ""
 
 # midtrain
 # NOTE: ensure that we use the same device_batch_size here as the base training script.
-python -m scripts.mid_train --device_batch_size=24 --eval_tokens=16384
+python -m scripts.mid_train --device_batch_size=24 --eval_tokens=32768
 echo ""
 echo "#### mid_train complete"
 echo "#### starting mid_eval"
