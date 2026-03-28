@@ -21,7 +21,7 @@ from nanochat.common import get_base_dir
 
 # The URL on the internet where the data is hosted and downloaded from on demand
 BASE_URL = "https://huggingface.co/datasets/TucanoBR/GigaVerbo/resolve/main/data"
-MAX_SHARD = 1574 # the last datashard is train-00000-01573.parquet
+MAX_SHARD = 1572 # the last datashard is train-00000-01573.parquet
 index_to_filename = lambda index: f"train-{index:05d}-of-01573.parquet" # format of the filenames
 base_dir = get_base_dir()
 DATA_DIR = os.path.join(base_dir, "base_data")
