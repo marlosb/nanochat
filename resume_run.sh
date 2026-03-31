@@ -2,18 +2,35 @@
 
 set -euo pipefail
 
-# Resume pipeline from an interrupted base_train without re-running setup,
-# dataset downloads, or tokenizer training.
+# Resume pipeline from an interrupted base_train.
+# This script bootstraps env, downloads required data files, then resumes training.
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export NANOCHAT_BASE_DIR="${NANOCHAT_BASE_DIR:-$HOME/.cache/nanochat}"
+mkdir -p "$NANOCHAT_BASE_DIR"
 
-if [ ! -d ".venv" ]; then
-    echo "ERROR: .venv not found. This resume script assumes setup already exists."
-    exit 1
+if ! command -v uv >/dev/null 2>&1; then
+    echo "uv not found. Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
+if [ ! -d ".venv" ]; then
+    echo ".venv not found. Creating virtual environment..."
+    uv venv
+fi
+
+echo "Syncing dependencies into .venv..."
+uv sync --extra gpu
+
 source .venv/bin/activate
+
+echo "Downloading identity_conversations.jsonl..."
+curl -fL -o "$NANOCHAT_BASE_DIR/identity_conversations.jsonl" \
+    "https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl"
+
+echo "Downloading base dataset shards (800)..."
+python -m nanochat.dataset -n 800 -w 8
 
 OUTPUT_DIRNAME="d24"
 CHECKPOINT_DIR="$NANOCHAT_BASE_DIR/base_checkpoints/d24"
