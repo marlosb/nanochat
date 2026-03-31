@@ -62,8 +62,8 @@ echo ""
 python -m scripts.base_train \
     --depth=24 \
     --total_batch_size=32768 \
-    --sample_every=100000 \
-    --save_every=100000 \
+    --sample_every=50000 \
+    --save_every=50000 \
     --run=march \
     --resume_from_step="$RESUME_STEP_NUM"
 
