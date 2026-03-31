@@ -33,21 +33,20 @@ python -m scripts.tok_eval
 # modifing datasets used. The intetion is to run quickly in a single GPU server.
 # Testing parameters:
 #Vocab size: 65,536
-#num_layers: 8
-#model_dim: 512
-#num_heads: 4
-#num_kv_heads: 4
+#num_layers: 24
+#model_dim: 1536
+#num_heads: 12
+#num_kv_heads: 12
 #Tokens / micro-batch / rank: 8 x 2048 = 16,384
 #Tokens / micro-batch: 16,384
-#Total batch size 16,384 => gradient accumulation steps: 1
-#Number of parameters: 92,274,688
-#Estimated FLOPs per token: 4.529848e+08
-#Calculated number of iterations from target data:param ratio: 168,960
-#Total number of training tokens: 2,768,240,640
+#Total batch size 32,768 => gradient accumulation steps: 2
+#Number of parameters: 880,803,840
+#Estimated FLOPs per token: 5.586813e+09
+#Calculated number of iterations from target data:param ratio: 806,400
+#Total number of training tokens: 26,424,115,200
 #Tokens : Params ratio: 30.00
-#Total training FLOPs estimate: 1.253971e+18
-#Scaling the LR for the AdamW parameters ∝1/√(512/768) = 1.224745
-
+#Total training FLOPs estimate: 1.476266e+20
+#Scaling the LR for the AdamW parameters ∝1/√(1536/768) = 0.707107
 
 echo ""
 echo "#### Starting base_train"
