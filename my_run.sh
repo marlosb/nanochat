@@ -51,7 +51,7 @@ python -m scripts.tok_eval
 echo ""
 echo "#### Starting base_train"
 echo ""
-python -m scripts.base_train --depth=24 --total_batch_size=32768 --sample_every=100000 --save_every=100000 --run=march
+python -m scripts.base_train --depth=24 --total_batch_size=32768 --sample_every=50000 --save_every=50000 --eval_every=10000 --core_metric_every=10000 --run=march
 echo ""
 echo "#### base_train complete"
 echo "#### starting base_loss"

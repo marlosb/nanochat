@@ -65,6 +65,8 @@ python -m scripts.base_train \
     --sample_every=50000 \
     --save_every=50000 \
     --run=march \
+    --eval_every=10000 \
+    --core_metric_every=10000 \
     --resume_from_step="$RESUME_STEP_NUM"
 
 echo ""
