@@ -61,7 +61,8 @@ echo "#### Checkpoint dir: $CHECKPOINT_DIR"
 echo ""
 python -m scripts.base_train \
     --depth=24 \
-    --total_batch_size=32768 \
+    --device_batch_size=24 \
+    --total_batch_size=49152 \
     --sample_every=50000 \
     --save_every=50000 \
     --run=march \
@@ -79,7 +80,7 @@ echo ""
 echo "#### base_loss complete"
 echo "#### starting base_eval"
 echo ""
-python -m scripts.base_eval --model_tag="$OUTPUT_DIRNAME"
+python -m scripts.base_eval
 
 echo ""
 echo "#### base_eval complete"
@@ -87,7 +88,7 @@ echo "#### starting mid_train"
 echo ""
 
 # NOTE: ensure the same device_batch_size policy you used originally.
-python -m scripts.mid_train --device_batch_size=24 --eval_tokens=32768
+python -m scripts.mid_train --device_batch_size=8 --eval_tokens=32768
 
 echo ""
 echo "#### mid_train complete"
