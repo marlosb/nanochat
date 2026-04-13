@@ -72,10 +72,10 @@ python -m scripts.base_train \
     --depth=24 \
     --device_batch_size=24 \
     --total_batch_size=49152 \
-    --target_param_data_ratio=40 \
+    --target_param_data_ratio=80 \
     --sample_every=50000 \
     --save_every=50000 \
-    --run=march \
+    --run=april1 \
     --eval_every=10000 \
     --core_metric_every=10000 \
     --resume_from_step="$RESUME_STEP_NUM"
