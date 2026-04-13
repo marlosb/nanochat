@@ -29,11 +29,11 @@ echo "Downloading identity_conversations.jsonl..."
 curl -fL -o "$NANOCHAT_BASE_DIR/identity_conversations.jsonl" \
     "https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl"
 
-echo "Downloading base dataset shards (800)..."
-python -m nanochat.dataset -n 800 -w 8
-
 OUTPUT_DIRNAME="d24"
 CHECKPOINT_DIR="$NANOCHAT_BASE_DIR/base_checkpoints/d24"
+TARGET_NUM_SHARDS="${TARGET_NUM_SHARDS:-1400}"
+DOWNLOAD_WORKERS="${DOWNLOAD_WORKERS:-8}"
+DOWNLOAD_START_IDX="${DOWNLOAD_START_IDX:-640}"
 
 if [ ! -d "$CHECKPOINT_DIR" ]; then
     echo "ERROR: checkpoint directory not found: $CHECKPOINT_DIR"
@@ -55,6 +55,15 @@ fi
 
 RESUME_STEP_NUM=$((10#$RESUME_STEP))
 
+if ! [[ "$DOWNLOAD_START_IDX" =~ ^[0-9]+$ ]]; then
+    DOWNLOAD_START_IDX=640
+fi
+
+echo ""
+echo "#### Downloading shards in range: $DOWNLOAD_START_IDX..$((TARGET_NUM_SHARDS - 1))"
+echo ""
+python -m nanochat.dataset -n "$TARGET_NUM_SHARDS" -s "$DOWNLOAD_START_IDX" -w "$DOWNLOAD_WORKERS"
+
 echo ""
 echo "#### Resuming base_train from step $RESUME_STEP_NUM"
 echo "#### Checkpoint dir: $CHECKPOINT_DIR"
@@ -63,6 +72,7 @@ python -m scripts.base_train \
     --depth=24 \
     --device_batch_size=24 \
     --total_batch_size=49152 \
+    --target_param_data_ratio=40 \
     --sample_every=50000 \
     --save_every=50000 \
     --run=march \

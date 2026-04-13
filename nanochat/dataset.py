@@ -137,13 +137,22 @@ def download_single_file(index):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download TucanoBR/GigaVerbo 411GB dataset shards")
     parser.add_argument("-n", "--num-files", type=int, default=-1, help="Number of shards to download (default: -1), -1 = disable")
+    parser.add_argument("-s", "--start-index", type=int, default=0, help="Starting shard index to download (default: 0)")
     parser.add_argument("-w", "--num-workers", type=int, default=4, help="Number of parallel download workers (default: 4)")
     args = parser.parse_args()
 
+    start_idx = max(0, args.start_index)
+    start_idx = min(start_idx, MAX_SHARD + 1)
     num = MAX_SHARD + 1 if args.num_files == -1 else min(args.num_files, MAX_SHARD + 1)
-    ids_to_download = list(range(num))
+    if num < start_idx:
+        print(f"Nothing to download: --num-files={num} is smaller than --start-index={start_idx}")
+        ids_to_download = []
+    else:
+        ids_to_download = list(range(start_idx, num))
     print(f"Downloading {len(ids_to_download)} shards using {args.num_workers} workers...")
     print(f"Target directory: {DATA_DIR}")
+    if ids_to_download:
+        print(f"Shard index range: {ids_to_download[0]}..{ids_to_download[-1]}")
     print()
     with Pool(processes=args.num_workers) as pool:
         results = pool.map(download_single_file, ids_to_download)
