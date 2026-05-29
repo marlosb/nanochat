@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Sweep depth=24 base pretraining configs to compare tok/sec and MFU on a single GPU.
-# Each config runs for ~10 minutes (via timeout when available) and writes a separate log.
+# Each config runs for ~2 hours (via timeout when available) and writes a separate log.
 
 set -euo pipefail
 
@@ -45,7 +45,7 @@ source .venv/bin/activate
 
 WANDB_RUN="${WANDB_RUN:-dummy}"
 DATASET="${DATASET:-gigaverbo-v2}"
-RUN_MINUTES="${RUN_MINUTES:-10}"
+RUN_MINUTES="${RUN_MINUTES:-120}"
 DEPTH="${DEPTH:-24}"
 MODEL_TAG_PREFIX="${MODEL_TAG_PREFIX:-sweep-d24}"
 NUM_ITERATIONS="${NUM_ITERATIONS:-1000000}" # high cap; timeout is expected to stop first
@@ -59,10 +59,10 @@ echo "[INFO] Logs directory: $LOG_DIR"
 echo -e "device_batch_size\ttotal_batch_size\tstatus\tlast_tok_per_sec\tlast_mfu\tlog_file" > "$SUMMARY_FILE"
 
 CONFIGS=(
-    "16 32768"
-    "20 40960"
-    "24 49152"
-    "28 57344"
+    "19 32768"
+    "19 38912"
+    "19 49152"
+    "19 65536"
 )
 
 for cfg in "${CONFIGS[@]}"; do
