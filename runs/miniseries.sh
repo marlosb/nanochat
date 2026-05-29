@@ -32,9 +32,9 @@ if [ -z "$SKIP_SETUP" ]; then
     echo "[RUN] source .venv/bin/activate"
     source .venv/bin/activate
 
-    # Download all shards for both pretraining datasets.
-    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2
-    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth
+    # Download 57 shards for gigaverbo-v2 and 10 shards for gigaverbo-v2-synth.
+    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
+    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 10
 else
     print_divider
     echo "[RUN] source .venv/bin/activate"

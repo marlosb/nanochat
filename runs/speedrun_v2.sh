@@ -30,6 +30,7 @@ NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
 DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
 TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-38912}"
 TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
+SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-2.35}"
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
 run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
 
@@ -64,9 +65,9 @@ run_cmd python -m nanochat.report reset
 # -----------------------------------------------------------------------------
 # Pretraining datasets
 
-# Download all shards for both datasets before training.
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth
+# Download 57 shards for gigaverbo-v2 and 10 shards for gigaverbo-v2-synth before training.
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 10
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
@@ -79,7 +80,7 @@ run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 2 on gigaverbo-v2-synth
 
-# Resume from the latest d24 checkpoint and continue for an additional matching number of steps
+# Resume from the latest d24 checkpoint and continue for synth-token-aligned steps.
 LAST_BASE_STEP=$(python - <<'PY'
 import os
 from nanochat.checkpoint_manager import find_last_step
@@ -88,10 +89,21 @@ checkpoint_dir = os.path.join(get_base_dir(), "base_checkpoints", "d24")
 print(find_last_step(checkpoint_dir))
 PY
 )
-SYNTH_END_STEP=$((LAST_BASE_STEP * 2))
+SYNTH_EXTRA_STEPS=$(python - <<PY
+import math
+target_ratio = float("${SYNTH_TARGET_PARAM_DATA_RATIO}")
+total_batch_size = int("${TOTAL_BATCH_SIZE}")
+# d24 scaling params used by base_train logs:
+# transformer_matrices (679,478,976) + lm_head (100,663,296)
+scaling_params = 780_142_272
+target_tokens = target_ratio * scaling_params
+print(math.ceil(target_tokens / total_batch_size))
+PY
+)
+SYNTH_END_STEP=$((LAST_BASE_STEP + SYNTH_EXTRA_STEPS))
 print_divider
-echo "[INFO] Resuming d24 from step ${LAST_BASE_STEP} to ${SYNTH_END_STEP} on gigaverbo-v2-synth"
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step "${LAST_BASE_STEP}" --num-iterations "${SYNTH_END_STEP}" --run="$WANDB_RUN"
+echo "[INFO] Resuming d24 from step ${LAST_BASE_STEP} to ${SYNTH_END_STEP} on gigaverbo-v2-synth (stage-2 ratio: ${SYNTH_TARGET_PARAM_DATA_RATIO})"
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$SYNTH_TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step "${LAST_BASE_STEP}" --num-iterations "${SYNTH_END_STEP}" --run="$WANDB_RUN"
 
 # -----------------------------------------------------------------------------
 # SFT (teach the model conversation special tokens, tool use, multiple choice)
