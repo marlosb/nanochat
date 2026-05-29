@@ -89,7 +89,7 @@ def get_hf_token_bytes(tokenizer, device="cpu"):
 # -----------------------------------------------------------------------------
 # CORE evaluation
 
-EVAL_BUNDLE_URL = "https://karpathy-public.s3.us-west-2.amazonaws.com/eval_bundle.zip"
+EVAL_BUNDLE_URL = "https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/eval_bundle.zip"
 
 
 def place_eval_bundle(file_path):
