@@ -27,6 +27,7 @@ import torch.distributed as dist
 
 from nanochat.gpt import GPT, GPTConfig, Linear
 from nanochat.dataloader import tokenizing_distributed_data_loader_bos_bestfit, tokenizing_distributed_data_loader_with_state_bos_bestfit
+from nanochat.dataset import DATASET_SPECS, DEFAULT_DATASET_TAG
 from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, print_banner, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
 from nanochat.tokenizer import get_tokenizer, get_token_bytes
 from nanochat.checkpoint_manager import save_checkpoint, load_checkpoint
@@ -68,6 +69,12 @@ parser.add_argument("--warmup-steps", type=int, default=40, help="number of step
 parser.add_argument("--warmdown-ratio", type=float, default=0.65, help="ratio of iterations for LR warmdown")
 parser.add_argument("--final-lr-frac", type=float, default=0.05, help="final LR as fraction of initial LR")
 parser.add_argument("--resume-from-step", type=int, default=-1, help="resume training from this step (-1 = disable)")
+parser.add_argument(
+    "--resume-model-tag",
+    type=str,
+    default=None,
+    help="load checkpoint from this model tag (defaults to current output model tag)",
+)
 # Evaluation
 parser.add_argument("--eval-every", type=int, default=250, help="evaluate val bpb every N steps (-1 = disable)")
 parser.add_argument("--eval-tokens", type=int, default=80*524288, help="number of tokens to evaluate val loss on")
@@ -77,6 +84,13 @@ parser.add_argument("--sample-every", type=int, default=2000, help="sample from 
 parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
 # Output
 parser.add_argument("--model-tag", type=str, default=None, help="override model tag for checkpoint directory name")
+parser.add_argument(
+    "--dataset",
+    type=str,
+    default=DEFAULT_DATASET_TAG,
+    choices=sorted(DATASET_SPECS.keys()),
+    help=f"pretraining dataset to use (default: {DEFAULT_DATASET_TAG})",
+)
 args = parser.parse_args()
 user_config = vars(args).copy()  # for logging
 # -----------------------------------------------------------------------------
@@ -153,11 +167,27 @@ model.init_weights() # 3) All tensors get initialized
 # If we are resuming, overwrite the model parameters with those of the checkpoint
 base_dir = get_base_dir()
 output_dirname = args.model_tag if args.model_tag else f"d{args.depth}" # e.g. d12
-checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
-resuming = args.resume_from_step != -1
-if resuming:
+save_checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
+resume_dirname = args.resume_model_tag if args.resume_model_tag else output_dirname
+load_checkpoint_dir = os.path.join(base_dir, "base_checkpoints", resume_dirname)
+print0(f"Training dataset: {args.dataset}")
+if resuming := args.resume_from_step != -1:
     print0(f"Resuming optimization from step {args.resume_from_step}")
-    model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, args.resume_from_step, device, load_optimizer=True, rank=ddp_rank)
+    print0(f"Checkpoint load dir: {load_checkpoint_dir}")
+    print0(f"Checkpoint save dir: {save_checkpoint_dir}")
+else:
+    print0(f"Checkpoint save dir: {save_checkpoint_dir}")
+if resuming:
+    model_data, optimizer_data, meta_data = load_checkpoint(load_checkpoint_dir, args.resume_from_step, device, load_optimizer=True, rank=ddp_rank)
+    checkpoint_model_config = meta_data.get("model_config")
+    if checkpoint_model_config is not None and checkpoint_model_config != model_config_kwargs:
+        raise ValueError(
+            "Checkpoint model configuration does not match current run configuration. "
+            f"Checkpoint n_layer={checkpoint_model_config.get('n_layer')}, n_embd={checkpoint_model_config.get('n_embd')}, "
+            f"vocab_size={checkpoint_model_config.get('vocab_size')} vs current "
+            f"n_layer={model_config_kwargs.get('n_layer')}, n_embd={model_config_kwargs.get('n_embd')}, "
+            f"vocab_size={model_config_kwargs.get('vocab_size')}."
+        )
     model.load_state_dict(model_data, strict=True, assign=True)
     del model_data # free up this memory after the copy
 
@@ -327,9 +357,35 @@ if scaler is not None:
 
 # -----------------------------------------------------------------------------
 # Initialize the DataLoaders for train/val
-dataloader_resume_state_dict = None if not resuming else meta_data["dataloader_state_dict"]
-train_loader = tokenizing_distributed_data_loader_with_state_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="train", device=device, resume_state_dict=dataloader_resume_state_dict)
-build_val_loader = lambda: tokenizing_distributed_data_loader_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="val", device=device)
+dataloader_resume_state_dict = None
+if resuming:
+    checkpoint_dataset = meta_data.get("dataset")
+    if checkpoint_dataset is None:
+        checkpoint_dataset = meta_data.get("user_config", {}).get("dataset")
+    if checkpoint_dataset is not None and checkpoint_dataset != args.dataset:
+        print0(
+            f"WARNING: Checkpoint dataset '{checkpoint_dataset}' differs from requested dataset '{args.dataset}'. "
+            "Resetting dataloader state to start from the beginning of the selected dataset."
+        )
+    else:
+        dataloader_resume_state_dict = meta_data.get("dataloader_state_dict")
+train_loader = tokenizing_distributed_data_loader_with_state_bos_bestfit(
+    tokenizer,
+    args.device_batch_size,
+    args.max_seq_len,
+    split="train",
+    device=device,
+    resume_state_dict=dataloader_resume_state_dict,
+    dataset_tag=args.dataset,
+)
+build_val_loader = lambda: tokenizing_distributed_data_loader_bos_bestfit(
+    tokenizer,
+    args.device_batch_size,
+    args.max_seq_len,
+    split="val",
+    device=device,
+    dataset_tag=args.dataset,
+)
 x, y, dataloader_state_dict = next(train_loader) # kick off load of the very first batch of data
 
 # -----------------------------------------------------------------------------
@@ -402,6 +458,11 @@ else:
     min_val_bpb = loop_state["min_val_bpb"]
     smooth_train_loss = loop_state["smooth_train_loss"]
     total_training_time = loop_state["total_training_time"]
+    if step > num_iterations:
+        raise ValueError(
+            f"Resumed step {step} exceeds configured num_iterations {num_iterations}. "
+            "Increase --num-iterations or resume from an earlier checkpoint."
+        )
 
 # Figure out the needed gradient accumulation micro-steps to reach the desired total batch size per step
 tokens_per_fwdbwd = args.device_batch_size * args.max_seq_len # tokens per iteration for a single rank
@@ -476,13 +537,14 @@ while True:
     # save checkpoint: at the end of the run, or every save_every steps, except at the first step or the resume step
     if last_step or (step > 0 and step != args.resume_from_step and args.save_every > 0 and step % args.save_every == 0):
         save_checkpoint(
-            checkpoint_dir,
+            save_checkpoint_dir,
             step,
             orig_model.state_dict(), # model parameters
             optimizer.state_dict(), # optimizer state
             { # metadata saved as json
                 "step": step,
                 "val_bpb": val_bpb, # loss at last step
+                "dataset": args.dataset,
                 "model_config": model_config_kwargs,
                 "user_config": user_config, # inputs to the training script
                 "device_batch_size": args.device_batch_size,
