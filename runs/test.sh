@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Quick smoke test for a single GPU.
-# Runs a tiny base pretraining + tiny SFT flow to validate the pipeline executes.
+# Test run for a single GPU using the same core training values as speedrun_v2.sh.
 
 set -euo pipefail
 
@@ -14,6 +13,26 @@ run_cmd() {
     print_divider
     echo "[RUN] $*"
     "$@"
+}
+
+run_with_timeout() {
+    local minutes="$1"
+    shift
+    if command -v timeout &> /dev/null; then
+        print_divider
+        echo "[RUN] timeout --signal=INT ${minutes}m $*"
+        set +e
+        timeout --signal=INT "${minutes}m" "$@"
+        status=$?
+        set -e
+        if [ "$status" -eq 0 ] || [ "$status" -eq 124 ] || [ "$status" -eq 130 ]; then
+            [ "$status" -eq 0 ] || echo "[INFO] Command stopped after timeout (${minutes}m)."
+            return 0
+        fi
+        return "$status"
+    fi
+    echo "[WARN] 'timeout' not found; running without time cap."
+    run_cmd "$@"
 }
 
 export OMP_NUM_THREADS=1
@@ -34,61 +53,63 @@ echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 
 WANDB_RUN="${WANDB_RUN:-dummy}"
+RUN_MINUTES="${RUN_MINUTES:-120}"
+DEPTH="${DEPTH:-24}"
+MODEL_TAG="${MODEL_TAG:-test-d24}"
+DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
+TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-38912}"
+TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
 
 # Tiny data download (small sample) for both pretraining datasets.
 # Validation shard is downloaded automatically by nanochat.dataset.
 run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 2
 run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 2
 
-# Tiny base pretraining run (depth 8, very short horizon).
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
-    --depth=8 \
+# Base pretraining stage 1 (same values as speedrun_v2 defaults), capped to 2 hours.
+run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
+    --depth="$DEPTH" \
     --dataset gigaverbo-v2 \
-    --model-tag=test-d8 \
-    --num-iterations=20 \
-    --max-seq-len=512 \
-    --device-batch-size=1 \
-    --total-batch-size=2048 \
+    --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" \
+    --model-tag="$MODEL_TAG" \
+    --device-batch-size="$DEVICE_BATCH_SIZE" \
+    --total-batch-size="$TOTAL_BATCH_SIZE" \
     --eval-every=-1 \
     --core-metric-every=-1 \
     --sample-every=-1 \
     --run="$WANDB_RUN"
 
-# Tiny base pretraining run on synth, resuming from previous tiny checkpoint
-# to follow the same two-stage flow as speedrun_v2.sh.
+# Base pretraining stage 2 on synth, resuming from stage 1, capped to 2 hours.
 LAST_BASE_STEP=$(python - <<'PY'
 import os
 from nanochat.checkpoint_manager import find_last_step
 from nanochat.common import get_base_dir
-checkpoint_dir = os.path.join(get_base_dir(), "base_checkpoints", "test-d8")
+checkpoint_dir = os.path.join(get_base_dir(), "base_checkpoints", "test-d24")
 print(find_last_step(checkpoint_dir))
 PY
 )
 SYNTH_END_STEP=$((LAST_BASE_STEP * 2))
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
-    --depth=8 \
+run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
+    --depth="$DEPTH" \
     --dataset gigaverbo-v2-synth \
-    --model-tag=test-d8 \
-    --resume-model-tag=test-d8 \
+    --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" \
+    --model-tag="$MODEL_TAG" \
+    --resume-model-tag="$MODEL_TAG" \
     --resume-from-step="$LAST_BASE_STEP" \
     --num-iterations="$SYNTH_END_STEP" \
-    --max-seq-len=512 \
-    --device-batch-size=1 \
-    --total-batch-size=2048 \
+    --device-batch-size="$DEVICE_BATCH_SIZE" \
+    --total-batch-size="$TOTAL_BATCH_SIZE" \
     --eval-every=-1 \
     --core-metric-every=-1 \
     --sample-every=-1 \
     --run="$WANDB_RUN"
 
-# Tiny SFT run on top of the tiny base checkpoint.
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- \
-    --model-tag=test-d8 \
-    --num-iterations=20 \
-    --max-seq-len=512 \
-    --device-batch-size=1 \
-    --total-batch-size=2048 \
+# SFT stage on top of the base checkpoint, capped to 2 hours.
+run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- \
+    --model-tag="$MODEL_TAG" \
+    --device-batch-size="$DEVICE_BATCH_SIZE" \
+    --total-batch-size="$TOTAL_BATCH_SIZE" \
     --eval-every=-1 \
     --chatcore-every=-1 \
     --run="$WANDB_RUN"
 
-echo "Smoke test completed."
+echo "Test run completed."
