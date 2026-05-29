@@ -21,7 +21,7 @@ if [ -z "$WANDB_RUN" ]; then
     WANDB_RUN=dummy
 fi
 
-# train tokenizer on ~2B characters (~34 seconds on my MacBook Pro M3 Max)
+# train tokenizer on a small subset of Gigaverbo-v2 (~34 seconds on my MacBook Pro M3 Max)
 python -m nanochat.dataset -n 8
 python -m scripts.tok_train --max-chars=2000000000
 python -m scripts.tok_eval
