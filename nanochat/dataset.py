@@ -31,7 +31,7 @@ DATASET_SPECS = {
     "gigaverbo-v2-synth": {
         "base_url": "https://huggingface.co/datasets/Polygl0t/gigaverbo-v2-synth/resolve/main/default",
         "data_dir": os.path.join(base_dir, "base_data_gigaverbo_v2_synth"),
-        "shard_count": 224,
+        "shard_count": 38,
     },
 }
 DEFAULT_DATASET_TAG = "gigaverbo-v2"
