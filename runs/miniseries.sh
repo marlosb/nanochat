@@ -17,10 +17,9 @@ if [ -z "$SKIP_SETUP" ]; then
     uv sync --extra gpu
     source .venv/bin/activate
 
-    # Tokenizer, download 1000 shards for pretraining
-    # (probably this can be reduced but it's tricky to determine the exact right number, TODO).
-    python -m nanochat.dataset -n 1000
-    python -m scripts.tok_train --max-chars=2000000000 --vocab-size=32768
+    # Download all shards for both pretraining datasets.
+    python -m nanochat.dataset --dataset gigaverbo-v2
+    python -m nanochat.dataset --dataset gigaverbo-v2-synth
 else
     source .venv/bin/activate
 fi
@@ -30,7 +29,7 @@ SERIES_NAME="${1:-${SERIES_NAME:-$(date +%b%d | tr '[:upper:]' '[:lower:]')}}"
 # Depths to train (the "miniseries")
 DEPTHS=(12 14 16 18 20 22 24 26)
 # Hardware
-NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
 # Logging
 WANDB_RUN="${WANDB_RUN:-${SERIES_NAME}_miniseries}"
 

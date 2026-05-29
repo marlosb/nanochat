@@ -28,7 +28,7 @@ class CustomJSON(Task):
             print("If you recently did a git pull and suddenly see this, it might be due to the new addition of identity conversations")
             print("See this discussion for more details: https://github.com/karpathy/nanochat/discussions/139")
             print("Quick fix: simply run the following command to download the file and you're done:")
-            print(f"curl -L -o {filepath} https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl")
+            print(f"curl -L -o {filepath} https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl")
             print("-" * 80)
 
         else:
@@ -62,4 +62,3 @@ class CustomJSON(Task):
             "messages": messages,
         }
         return conversation
-

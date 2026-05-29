@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script is configured to train your own GPT-2 grade LLM (pretraining + finetuning)
-# It is designed to run on a blank 8XH100 GPU node and takes longer than speedrun.sh
+# It is designed to run on a blank single H100 GPU node and takes longer than speedrun.sh
 # because it runs an additional base pretraining stage on gigaverbo-v2-synth.
 
 # 1) Example launch (simplest):
@@ -13,6 +13,7 @@
 
 # Default intermediate artifacts directory is in ~/.cache/nanochat
 export OMP_NUM_THREADS=1
+NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
 mkdir -p $NANOCHAT_BASE_DIR
 
@@ -42,33 +43,22 @@ fi
 python -m nanochat.report reset
 
 # -----------------------------------------------------------------------------
-# Tokenizer
+# Pretraining datasets
 
-# Download the first few shards of the Gigaverbo-v2 pretraining dataset
-python -m nanochat.dataset -n 8
-# Immediately also kick off downloading more shards in the background while tokenizer trains
-python -m nanochat.dataset -n 170 &
-DATASET_DOWNLOAD_PID=$!
-# train the tokenizer with vocab size 2**15 = 32768 on ~2B characters of data
-python -m scripts.tok_train
-# evaluate the tokenizer (report compression ratio etc.)
-python -m scripts.tok_eval
+# Download all shards for both datasets before training.
+python -m nanochat.dataset --dataset gigaverbo-v2
+python -m nanochat.dataset --dataset gigaverbo-v2-synth
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
-echo "Waiting for gigaverbo-v2 dataset download to complete..."
-wait $DATASET_DOWNLOAD_PID
 
 # d24 model (slightly undertrained to beat GPT-2 => decrease data:params ratio from compute optimal 10.5 (default) to 8)
-torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2 --run=$WANDB_RUN
 # evaluate the model: CORE metric, BPB on train/val, and draw samples
-torchrun --standalone --nproc_per_node=8 -m scripts.base_eval -- --device-batch-size=16
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval -- --device-batch-size=16
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 2 on gigaverbo-v2-synth
-
-# Download synth shards before the second base pretraining stage
-python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 170
 
 # Resume from the latest d24 checkpoint and continue for an additional matching number of steps
 LAST_BASE_STEP=$(python - <<'PY'
@@ -81,18 +71,18 @@ PY
 )
 SYNTH_END_STEP=$((LAST_BASE_STEP * 2))
 echo "Resuming d24 from step ${LAST_BASE_STEP} and continuing to step ${SYNTH_END_STEP} on gigaverbo-v2-synth..."
-torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step ${LAST_BASE_STEP} --num-iterations ${SYNTH_END_STEP} --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step ${LAST_BASE_STEP} --num-iterations ${SYNTH_END_STEP} --run=$WANDB_RUN
 
 # -----------------------------------------------------------------------------
 # SFT (teach the model conversation special tokens, tool use, multiple choice)
 
 # download 2.3MB of synthetic identity conversations to impart a personality to nanochat
 # see dev/gen_synthetic_data.py for details on how this data was prepared and to get a sense of how you can easily tune it
-curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
+curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl
 
 # run SFT and eval the model
-torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- --device-batch-size=16 --run=$WANDB_RUN
-torchrun --standalone --nproc_per_node=8 -m scripts.chat_eval -- -i sft
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --device-batch-size=16 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i sft
 
 # chat with the model over CLI! Leave out the -p to chat interactively
 # python -m scripts.chat_cli -p "Why is the sky blue?"
