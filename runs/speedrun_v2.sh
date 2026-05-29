@@ -27,6 +27,9 @@ run_cmd() {
 # Default intermediate artifacts directory is in ~/.cache/nanochat
 export OMP_NUM_THREADS=1
 NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
+DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
+TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-38912}"
+TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
 run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
 
@@ -49,8 +52,7 @@ source .venv/bin/activate
 # -----------------------------------------------------------------------------
 # wandb setup
 if [ -z "$WANDB_RUN" ]; then
-    # by default use "dummy" : it's handled as a special case, skips logging to wandb
-    WANDB_RUN=dummy
+    WANDB_RUN=june
 fi
 
 # -----------------------------------------------------------------------------
@@ -69,10 +71,10 @@ run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
 
-# d24 model (slightly undertrained to beat GPT-2 => decrease data:params ratio from compute optimal 10.5 (default) to 8)
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
+# d24 model tuned for single H100 runs.
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
 # evaluate the model: CORE metric, BPB on train/val, and draw samples
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- --device-batch-size=16
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- --device-batch-size="$DEVICE_BATCH_SIZE"
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 2 on gigaverbo-v2-synth
@@ -89,7 +91,7 @@ PY
 SYNTH_END_STEP=$((LAST_BASE_STEP * 2))
 print_divider
 echo "[INFO] Resuming d24 from step ${LAST_BASE_STEP} to ${SYNTH_END_STEP} on gigaverbo-v2-synth"
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio=8 --device-batch-size=16 --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step "${LAST_BASE_STEP}" --num-iterations "${SYNTH_END_STEP}" --run="$WANDB_RUN"
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --fp8 --dataset gigaverbo-v2-synth --model-tag d24 --resume-model-tag d24 --resume-from-step "${LAST_BASE_STEP}" --num-iterations "${SYNTH_END_STEP}" --run="$WANDB_RUN"
 
 # -----------------------------------------------------------------------------
 # SFT (teach the model conversation special tokens, tool use, multiple choice)
@@ -99,7 +101,7 @@ run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base
 run_cmd curl -L -o "$NANOCHAT_BASE_DIR/identity_conversations.jsonl" https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl
 
 # run SFT and eval the model
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- --device-batch-size=16 --run="$WANDB_RUN"
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- --device-batch-size="$DEVICE_BATCH_SIZE" --run="$WANDB_RUN"
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_eval -- -i sft
 
 # chat with the model over CLI! Leave out the -p to chat interactively
