@@ -5,22 +5,39 @@
 # Example: ./miniseries.sh jan11
 # Default series name is today's date (e.g., jan11)
 
+print_divider() {
+    echo ""
+    echo "------------------------------------------------------------"
+}
+
+run_cmd() {
+    print_divider
+    echo "[RUN] $*"
+    "$@"
+}
+
 export OMP_NUM_THREADS=1
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
-mkdir -p $NANOCHAT_BASE_DIR
+run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
 
 # Setup (skip with SKIP_SETUP=1)
 if [ -z "$SKIP_SETUP" ]; then
     # uv
-    command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
-    [ -d ".venv" ] || uv venv
-    uv sync --extra gpu
+    if ! command -v uv &> /dev/null; then
+        run_cmd sh -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
+    [ -d ".venv" ] || run_cmd uv venv
+    run_cmd uv sync --extra gpu
+    print_divider
+    echo "[RUN] source .venv/bin/activate"
     source .venv/bin/activate
 
     # Download all shards for both pretraining datasets.
-    python -m nanochat.dataset --dataset gigaverbo-v2
-    python -m nanochat.dataset --dataset gigaverbo-v2-synth
+    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2
+    run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth
 else
+    print_divider
+    echo "[RUN] source .venv/bin/activate"
     source .venv/bin/activate
 fi
 
@@ -34,7 +51,7 @@ NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
 WANDB_RUN="${WANDB_RUN:-${SERIES_NAME}_miniseries}"
 
 RESULTS_DIR="$NANOCHAT_BASE_DIR/${SERIES_NAME}_miniseries_results"
-mkdir -p "$RESULTS_DIR"
+run_cmd mkdir -p "$RESULTS_DIR"
 RESULTS_FILE="$RESULTS_DIR/results.csv"
 
 # Write CSV header only if file doesn't exist
@@ -65,6 +82,8 @@ for d in "${DEPTHS[@]}"; do
         DEVICE_BATCH_SIZE_ARG="--device-batch-size=32"
     fi
 
+    print_divider
+    echo "[RUN] torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=$d --run=${WANDB_RUN}_d${d} --model-tag=${TAG} --core-metric-every=999999 --core-metric-max-per-task=-1 --sample-every=-1 --save-every=-1 $DEVICE_BATCH_SIZE_ARG 2>&1 | tee $RESULTS_DIR/${TAG}_train.log"
     torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- \
         --depth=$d \
         --run="${WANDB_RUN}_d${d}" \

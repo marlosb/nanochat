@@ -1,5 +1,16 @@
 #!/bin/bash
 
+print_divider() {
+    echo ""
+    echo "------------------------------------------------------------"
+}
+
+run_cmd() {
+    print_divider
+    echo "[RUN] $*"
+    "$@"
+}
+
 LABEL="jan26"
 
 FLOPS_BUDGETS=(
@@ -16,14 +27,16 @@ EVAL_TOKENS=$((100 * 524288))  # ~100M tokens for final eval (default is ~10M)
 
 export OMP_NUM_THREADS=1
 export NANOCHAT_BASE_DIR="${NANOCHAT_BASE_DIR:-$HOME/.cache/nanochat}"
+print_divider
+echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 
 # Download all shards for both pretraining datasets.
-python -m nanochat.dataset --dataset gigaverbo-v2
-python -m nanochat.dataset --dataset gigaverbo-v2-synth
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth
 
 RESULTS_DIR="$NANOCHAT_BASE_DIR/scaling_laws_results_${LABEL}"
-mkdir -p "$RESULTS_DIR"
+run_cmd mkdir -p "$RESULTS_DIR"
 RESULTS_FILE="$RESULTS_DIR/results.csv"
 
 # Write CSV header only if file doesn't exist
@@ -79,6 +92,8 @@ for flops in "${FLOPS_BUDGETS[@]}"; do
         # Train the model with fixed flops budget
         # The script will auto-calculate num_iterations to hit target_flops
         # CORE eval happens once at the end (999999 ensures only final step)
+        print_divider
+        echo "[RUN] torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=$d --target-flops=$flops --target-param-data-ratio=-1 --run=${WANDB_RUN}_${TAG} --model-tag=${TAG} --eval-tokens=$EVAL_TOKENS --core-metric-every=999999 --core-metric-max-per-task=-1 --sample-every=-1 --save-every=-1 $DEVICE_BATCH_SIZE_ARG 2>&1 | tee $RESULTS_DIR/${TAG}_train.log"
         torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- \
             --depth=$d \
             --target-flops=$flops \

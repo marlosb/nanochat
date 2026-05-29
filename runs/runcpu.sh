@@ -10,26 +10,41 @@
 # Think of this run as educational/fun demo, not something you should expect to work well.
 # You may also want to run this script manually and one by one, copy pasting commands into your terminal.
 
+print_divider() {
+    echo ""
+    echo "------------------------------------------------------------"
+}
+
+run_cmd() {
+    print_divider
+    echo "[RUN] $*"
+    "$@"
+}
+
 # all the setup stuff
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
-mkdir -p $NANOCHAT_BASE_DIR
-command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
-[ -d ".venv" ] || uv venv
-uv sync --extra cpu
+run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
+if ! command -v uv &> /dev/null; then
+    run_cmd sh -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+fi
+[ -d ".venv" ] || run_cmd uv venv
+run_cmd uv sync --extra cpu
+print_divider
+echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 if [ -z "$WANDB_RUN" ]; then
     WANDB_RUN=dummy
 fi
 
 # train tokenizer on a small subset of Gigaverbo-v2 (~34 seconds on my MacBook Pro M3 Max)
-python -m nanochat.dataset -n 8
-python -m scripts.tok_train --max-chars=2000000000
-python -m scripts.tok_eval
+run_cmd python -m nanochat.dataset -n 8
+run_cmd python -m scripts.tok_train --max-chars=2000000000
+run_cmd python -m scripts.tok_eval
 
 # train a small 4 layer model
 # I tuned this run to complete in about 30 minutes on my MacBook Pro M3 Max.
 # To get better results, try increasing num_iterations, or get other ideas from your favorite LLM.
-python -m scripts.base_train \
+run_cmd python -m scripts.base_train \
     --depth=6 \
     --head-dim=64 \
     --window-pattern=L \
@@ -42,11 +57,11 @@ python -m scripts.base_train \
     --sample-every=100 \
     --num-iterations=5000 \
     --run=$WANDB_RUN
-python -m scripts.base_eval --device-batch-size=1 --split-tokens=16384 --max-per-task=16
+run_cmd python -m scripts.base_eval --device-batch-size=1 --split-tokens=16384 --max-per-task=16
 
 # SFT (~10 minutes on my MacBook Pro M3 Max)
-curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl
-python -m scripts.chat_sft \
+run_cmd curl -L -o "$NANOCHAT_BASE_DIR/identity_conversations.jsonl" https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/identity_conversations.jsonl
+run_cmd python -m scripts.chat_sft \
     --max-seq-len=512 \
     --device-batch-size=32 \
     --total-batch-size=16384 \

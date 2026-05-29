@@ -5,28 +5,43 @@
 
 set -euo pipefail
 
+print_divider() {
+    echo ""
+    echo "------------------------------------------------------------"
+}
+
+run_cmd() {
+    print_divider
+    echo "[RUN] $*"
+    "$@"
+}
+
 export OMP_NUM_THREADS=1
 NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
 export NANOCHAT_BASE_DIR="${NANOCHAT_BASE_DIR:-$HOME/.cache/nanochat}"
-mkdir -p "$NANOCHAT_BASE_DIR"
+run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
 
 # Optional setup (skip with SKIP_SETUP=1 if .venv is already ready)
 if [ -z "${SKIP_SETUP:-}" ]; then
-    command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
-    [ -d ".venv" ] || uv venv
-    uv sync --extra gpu
+    if ! command -v uv &> /dev/null; then
+        run_cmd sh -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
+    [ -d ".venv" ] || run_cmd uv venv
+    run_cmd uv sync --extra gpu
 fi
+print_divider
+echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 
 WANDB_RUN="${WANDB_RUN:-dummy}"
 
 # Tiny data download (small sample) for both pretraining datasets.
 # Validation shard is downloaded automatically by nanochat.dataset.
-python -m nanochat.dataset --dataset gigaverbo-v2 -n 2
-python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 2
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 2
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 2
 
 # Tiny base pretraining run (depth 8, very short horizon).
-torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
     --depth=8 \
     --dataset gigaverbo-v2 \
     --model-tag=test-d8 \
@@ -50,7 +65,7 @@ print(find_last_step(checkpoint_dir))
 PY
 )
 SYNTH_END_STEP=$((LAST_BASE_STEP * 2))
-torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
     --depth=8 \
     --dataset gigaverbo-v2-synth \
     --model-tag=test-d8 \
@@ -66,7 +81,7 @@ torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -
     --run="$WANDB_RUN"
 
 # Tiny SFT run on top of the tiny base checkpoint.
-torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- \
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.chat_sft -- \
     --model-tag=test-d8 \
     --num-iterations=20 \
     --max-seq-len=512 \
