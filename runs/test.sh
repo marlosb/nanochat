@@ -77,6 +77,7 @@ run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_P
     --eval-every=-1 \
     --core-metric-every=-1 \
     --sample-every=-1 \
+    --save-every=5000 \
     --run="$WANDB_RUN"
 
 # Base pretraining stage 2 on synth, resuming from stage 1, capped to 2 hours.
@@ -113,6 +114,7 @@ run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_P
     --eval-every=-1 \
     --core-metric-every=-1 \
     --sample-every=-1 \
+    --save-every=5000 \
     --run="$WANDB_RUN"
 
 # SFT stage on top of the base checkpoint, capped to 2 hours.
