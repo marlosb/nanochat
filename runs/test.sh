@@ -63,8 +63,8 @@ SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-2.35}"
 
 # Tiny data download (small sample) for both pretraining datasets.
 # Validation shard is downloaded automatically by nanochat.dataset.
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 10
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 4
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 4
 
 # Base pretraining stage 1 (same values as speedrun_v2 defaults), capped to 2 hours.
 run_with_timeout "$RUN_MINUTES" torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- \
