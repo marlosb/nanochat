@@ -69,7 +69,6 @@ run_cmd python -m nanochat.report reset
 
 # Download 57 shards for gigaverbo-v2 and 10 shards for gigaverbo-v2-synth before training.
 run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 10
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
