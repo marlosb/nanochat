@@ -10,6 +10,7 @@ For details of how the dataset was prepared, see `repackage_data_reference.py`.
 import os
 import argparse
 import time
+import random
 from functools import partial
 import requests
 import pyarrow.parquet as pq
@@ -197,6 +198,22 @@ def download_single_file(index, dataset_tag=None):
     return False
 
 
+def select_shard_ids(num_files, shard_count, seed):
+    """Select random train shard IDs and always append the validation shard."""
+    val_shard = shard_count - 1
+    train_shards = list(range(val_shard))
+    if num_files == -1:
+        num_train_shards = len(train_shards)
+    elif num_files < -1:
+        raise ValueError("--num-files must be -1 or a non-negative integer")
+    else:
+        num_train_shards = min(num_files, len(train_shards))
+    rng = random.Random(seed)
+    train_ids = rng.sample(train_shards, k=num_train_shards)
+    ids_to_download = train_ids + [val_shard]
+    return ids_to_download, train_ids, val_shard
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download pretraining dataset shards")
     parser.add_argument(
@@ -209,24 +226,28 @@ if __name__ == "__main__":
     )
     parser.add_argument("-n", "--num-files", type=int, default=-1, help="Number of train shards to download (default: all), -1 = all")
     parser.add_argument("-w", "--num-workers", type=int, default=4, help="Number of parallel download workers (default: 4)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed used for train shard selection (default: 42)")
     args = parser.parse_args()
     resolved_tag, spec = _get_dataset_spec(args.dataset)
     data_dir = spec["data_dir"]
-    max_shard = spec["shard_count"] - 1
 
     # Prepare the output directory
     os.makedirs(data_dir, exist_ok=True)
 
-    # The way this works is that the user specifies the number of train shards to download via the -n flag.
-    # In addition to that, the validation shard is *always* downloaded and is pinned to be the last shard.
-    num_train_shards = max_shard if args.num_files == -1 else min(args.num_files, max_shard)
-    ids_to_download = list(range(num_train_shards))
-    ids_to_download.append(max_shard) # always download the validation shard
+    # Randomly select train shards based on requested count, always append val shard.
+    ids_to_download, train_ids, val_shard = select_shard_ids(
+        num_files=args.num_files,
+        shard_count=spec["shard_count"],
+        seed=args.seed,
+    )
 
     # Download the shards
     print(f"Downloading {len(ids_to_download)} shards using {args.num_workers} workers...")
     print(f"Dataset: {resolved_tag}")
     print(f"Target directory: {data_dir}")
+    print(f"Random seed: {args.seed}")
+    print(f"Selected train shard IDs ({len(train_ids)}): {train_ids}")
+    print(f"Validation shard ID: {val_shard}")
     print()
     download_fn = partial(download_single_file, dataset_tag=resolved_tag)
     with Pool(processes=args.num_workers) as pool:
