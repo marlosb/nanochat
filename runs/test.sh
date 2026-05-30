@@ -53,7 +53,7 @@ echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 
 WANDB_RUN="${WANDB_RUN:-dummy}"
-RUN_MINUTES="${RUN_MINUTES:-120}"
+RUN_MINUTES="${RUN_MINUTES:-60}"
 DEPTH="${DEPTH:-24}"
 MODEL_TAG="${MODEL_TAG:-test-d24}"
 DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
