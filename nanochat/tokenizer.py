@@ -124,12 +124,20 @@ class HuggingFaceTokenizer:
 
     def get_bos_token_id(self):
         # Different HuggingFace models use different BOS tokens and there is little consistency
-        # 1) attempt to find a <|bos|> token
-        bos = self.encode_special("<|bos|>")
-        # 2) if that fails, attempt to find a <|endoftext|> token (e.g. GPT-2 models)
-        if bos is None:
-            bos = self.encode_special("<|endoftext|>")
-        # 3) if these fail, it's better to crash than to silently return None
+        # Try a few common special tokens used across model families.
+        bos_candidates = [
+            "<|bos|>",        # nanochat-style
+            "<|endoftext|>",  # GPT-2-style
+            "<s>",            # LLaMA / SentencePiece-style
+            "<bos>",
+            "<|im_start|>",   # chatml-style tokenizers
+        ]
+        bos = None
+        for token in bos_candidates:
+            bos = self.encode_special(token)
+            if bos is not None:
+                break
+        # If these fail, it's better to crash than to silently return None.
         assert bos is not None, "Failed to find BOS token in tokenizer"
         return bos
 
