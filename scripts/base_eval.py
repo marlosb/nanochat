@@ -68,10 +68,27 @@ def load_hf_model(hf_path: str, device):
     """Load a HuggingFace model and tokenizer."""
     print0(f"Loading HuggingFace model from: {hf_path}")
     from transformers import AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained(hf_path)
+
+    # Reduce VRAM pressure on CUDA by loading in reduced precision.
+    load_kwargs = {"low_cpu_mem_usage": True}
+    if device.type == "cuda":
+        bf16_ok = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        load_kwargs["torch_dtype"] = torch.bfloat16 if bf16_ok else torch.float16
+
+    model = AutoModelForCausalLM.from_pretrained(hf_path, **load_kwargs)
     model.to(device)
     model.eval()
-    max_seq_len = 1024 if "gpt2" in hf_path else None
+
+    # Respect model context length so eval truncation can prevent OOM.
+    max_seq_len = None
+    config = getattr(model, "config", None)
+    if config is not None:
+        for attr in ("max_position_embeddings", "n_positions", "seq_length"):
+            value = getattr(config, attr, None)
+            if isinstance(value, int) and value > 0:
+                max_seq_len = value
+                break
+
     model = ModelWrapper(model, max_seq_len=max_seq_len)
     tokenizer = HuggingFaceTokenizer.from_pretrained(hf_path)
     return model, tokenizer
