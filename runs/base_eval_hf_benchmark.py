@@ -21,6 +21,7 @@ from typing import Iterable
 
 
 DEFAULT_MODELS = [
+    "openai-community/gpt2",
     "Polygl0t/Tucano2-0.6B-Base",
     "Polygl0t/Tucano2-qwen-1.5B-Base",
     "TucanoBR/Tucano-630m",
