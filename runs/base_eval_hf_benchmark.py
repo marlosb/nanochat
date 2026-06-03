@@ -21,13 +21,10 @@ from typing import Iterable
 
 
 DEFAULT_MODELS = [
-    "openai-community/gpt2",
     "Polygl0t/Tucano2-0.6B-Base",
     "Polygl0t/Tucano2-qwen-1.5B-Base",
-    "Polygl0t/Tucano2-qwen-3.7B-Base",
     "TucanoBR/Tucano-630m",
     "TucanoBR/Tucano-1b1",
-    "TucanoBR/Tucano-2b4",
 ]
 
 
@@ -105,6 +102,10 @@ def _write_report(
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _timestamp() -> str:
+    return dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark multiple HF models with scripts.base_eval.")
     parser.add_argument("--output-md", type=str, default="runs/base_eval_hf_report.md")
@@ -150,15 +151,28 @@ def main() -> int:
         if args.device_type:
             cmd.extend(["--device-type", args.device_type])
 
-        proc = subprocess.run(
+        print(f"{_timestamp()} - model running - {model}", flush=True)
+        proc = subprocess.Popen(
             cmd,
             cwd=repo_root,
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
         )
+        combined_lines: list[str] = []
+        task_re = re.compile(r"Evaluating:\s*([^\(]+)\(")
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            combined_lines.append(line)
+            task_match = task_re.search(line)
+            if task_match:
+                task = task_match.group(1).strip()
+                print(f"{_timestamp()} - model running - {model} - task running - {task}", flush=True)
+        proc.wait()
         duration_s = time.time() - t0
-        combined_output = (proc.stdout or "") + ("\n" if proc.stdout and proc.stderr else "") + (proc.stderr or "")
+        combined_output = "".join(combined_lines)
         log_path.write_text(combined_output, encoding="utf-8", errors="replace")
 
         core_metric = _parse_core_metric(csv_path)

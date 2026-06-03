@@ -90,6 +90,15 @@ def get_hf_token_bytes(tokenizer, device="cpu"):
 # CORE evaluation
 
 EVAL_BUNDLE_URL = "https://huggingface.co/datasets/marlosb/auxiliary_data/resolve/main/eval_bundle.zip"
+EXCLUDED_CORE_TASKS = {
+    "jeopardy",
+    "bigbench_qa_wikidata",
+    "commonsense_qa",
+    "squad",
+    "coqa",
+    "boolq",
+    "bigbench_language_identification",
+}
 
 
 def place_eval_bundle(file_path):
@@ -121,7 +130,7 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1):
 
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-    tasks = config['icl_tasks']
+    tasks = [t for t in config['icl_tasks'] if t['label'] not in EXCLUDED_CORE_TASKS]
 
     # Load random baseline values
     random_baselines = {}
