@@ -24,6 +24,7 @@ import csv
 import time
 import json
 import yaml
+from datetime import datetime
 import shutil
 import random
 import zipfile
@@ -170,7 +171,10 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1):
             'num_fewshot': task['num_fewshot'][0],
             'continuation_delimiter': task.get('continuation_delimiter', ' ')
         }
-        print0(f"Evaluating: {label} ({task_meta['num_fewshot']}-shot, type: {task_meta['task_type']})... ", end='')
+        print0(
+            f"{datetime.now().isoformat(timespec='seconds')} - task start - "
+            f"{label} ({task_meta['num_fewshot']}-shot, type: {task_meta['task_type']})"
+        )
 
         data_path = os.path.join(data_base_path, task_meta['dataset_uri'])
         with open(data_path, 'r', encoding='utf-8') as f:
@@ -188,7 +192,10 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1):
         centered_result = (accuracy - 0.01 * random_baseline) / (1.0 - 0.01 * random_baseline)
         centered_results[label] = centered_result
         elapsed = time.time() - start_time
-        print0(f"accuracy: {accuracy:.4f} | centered: {centered_result:.4f} | time: {elapsed:.2f}s")
+        print0(
+            f"{datetime.now().isoformat(timespec='seconds')} - task end - {label} | "
+            f"accuracy: {accuracy:.4f} | centered: {centered_result:.4f} | time: {elapsed:.2f}s"
+        )
 
     core_metric = sum(centered_results.values()) / len(centered_results)
     out = {
