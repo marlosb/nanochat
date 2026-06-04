@@ -163,13 +163,16 @@ def main() -> int:
             bufsize=1,
         )
         combined_lines: list[str] = []
-        task_re = re.compile(r"Evaluating:\s*([^\(]+)\(")
+        task_re = re.compile(
+            r"(?:Evaluating:\s*([^\(]+)\()|(?:task start -\s*([^\(]+)\()",
+            re.IGNORECASE,
+        )
         assert proc.stdout is not None
         for line in proc.stdout:
             combined_lines.append(line)
             task_match = task_re.search(line)
             if task_match:
-                task = task_match.group(1).strip()
+                task = (task_match.group(1) or task_match.group(2) or "").strip()
                 print(f"{_timestamp()} - model running - {model} - task running - {task}", flush=True)
         proc.wait()
         duration_s = time.time() - t0
