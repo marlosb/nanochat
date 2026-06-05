@@ -14,6 +14,7 @@ import re
 import shutil
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -123,6 +124,7 @@ class FoundryLocalClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or "local"
         self.timeout = timeout
+        self.inference_bases = self._discover_inference_bases()
 
     def _headers(self):
         return {
@@ -136,38 +138,106 @@ class FoundryLocalClient:
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    def _get_json(self, url: str):
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.api_key}"}, method="GET")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
+
+    def _discover_inference_bases(self):
+        """
+        Foundry service can expose inference on endpoints listed by /openai/status.
+        Prefer discovered endpoints first, then fall back to provided base_url.
+        """
+        bases = []
+        for status_url in (f"{self.base_url}/openai/status", f"{self.base_url}/status"):
+            try:
+                payload = self._get_json(status_url)
+                for ep in payload.get("endpoints", []):
+                    ep = (ep or "").rstrip("/")
+                    if ep and ep not in bases:
+                        bases.append(ep)
+            except Exception:
+                continue
+        if self.base_url not in bases:
+            bases.append(self.base_url)
+        print0(f"Foundry inference endpoints: {bases}")
+        return bases
+
     def _completion_endpoints(self):
         model_encoded = urllib.parse.quote(self.model_id, safe="")
-        return [
-            (f"{self.base_url}/v1/completions", "openai"),
-            (f"{self.base_url}/openai/v1/completions", "openai"),
-            (f"{self.base_url}/openai/completions", "openai"),
-            (f"{self.base_url}/openai/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
-            (f"{self.base_url}/openai/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
-            (f"{self.base_url}/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
-            (f"{self.base_url}/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
-        ]
+        endpoints = []
+        for base in self.inference_bases:
+            endpoints.extend(
+                [
+                    (f"{base}/v1/completions", "openai"),
+                    (f"{base}/openai/v1/completions", "openai"),
+                    (f"{base}/openai/completions", "openai"),
+                    (f"{base}/openai/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
+                    (f"{base}/openai/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
+                    (f"{base}/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
+                    (f"{base}/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
+                ]
+            )
+        return endpoints
 
     def _chat_endpoints(self):
         model_encoded = urllib.parse.quote(self.model_id, safe="")
-        return [
-            (f"{self.base_url}/v1/chat/completions", "openai"),
-            (f"{self.base_url}/openai/v1/chat/completions", "openai"),
-            (f"{self.base_url}/openai/chat/completions", "openai"),
-            (f"{self.base_url}/openai/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
-            (f"{self.base_url}/openai/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
-            (f"{self.base_url}/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
-            (f"{self.base_url}/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
-        ]
+        endpoints = []
+        for base in self.inference_bases:
+            endpoints.extend(
+                [
+                    (f"{base}/v1/chat/completions", "openai"),
+                    (f"{base}/openai/v1/chat/completions", "openai"),
+                    (f"{base}/openai/chat/completions", "openai"),
+                    (f"{base}/openai/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
+                    (f"{base}/openai/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
+                    (f"{base}/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
+                    (f"{base}/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
+                ]
+            )
+        return endpoints
 
     def load_model(self, ttl_seconds: int):
         if ttl_seconds <= 0:
             return
-        model = urllib.parse.quote(self.model_id, safe="")
-        url = f"{self.base_url}/openai/load/{model}?ttl={int(ttl_seconds)}"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.api_key}"}, method="GET")
-        with urllib.request.urlopen(req, timeout=self.timeout) as _:
-            pass
+        model_candidates = [self.model_id]
+        # Some Foundry installs reject versioned ids in /openai/load; try unversioned alias too.
+        if ":" in self.model_id:
+            model_candidates.append(self.model_id.split(":", 1)[0])
+
+        endpoint_templates = [
+            "{base}/openai/load/{model}?ttl={ttl}",
+            "{base}/load/{model}?ttl={ttl}",
+        ]
+
+        errors = []
+        for candidate in model_candidates:
+            model = urllib.parse.quote(candidate, safe="")
+            for template in endpoint_templates:
+                url = template.format(base=self.base_url, model=model, ttl=int(ttl_seconds))
+                req = urllib.request.Request(
+                    url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    method="GET",
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=self.timeout) as _:
+                        if candidate != self.model_id:
+                            print0(f"Foundry load accepted alias '{candidate}' for requested '{self.model_id}'")
+                        return
+                except urllib.error.HTTPError as e:
+                    errors.append(f"{url} -> HTTP {e.code}")
+                except Exception as e:
+                    errors.append(f"{url} -> {e}")
+
+        # Don't hard-fail here. Some Foundry versions auto-load on first completion request.
+        print0(
+            "Warning: explicit Foundry load call failed; continuing with inference requests. "
+            f"Tried: {errors}"
+        )
 
     def completions(self, prompt: str, max_tokens: int, temperature: float, echo: bool = False, logprobs: int | None = None):
         base_payload = {
