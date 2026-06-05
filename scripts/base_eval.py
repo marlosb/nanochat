@@ -18,24 +18,33 @@ Examples:
 
     # Quick/approximate evaluation using a single GPU
     python -m scripts.base_eval --model-tag d24 --device-batch-size=16 --max-per-task=100 --split-tokens=524288
+
+    # Evaluate a Foundry Local model (OpenAI-compatible endpoint)
+    python -m scripts.base_eval --eval core --foundry-model gpt-oss-2b --foundry-base-url http://127.0.0.1:5273
 """
 import os
 import csv
 import time
 import json
 import yaml
+import urllib.error
+import urllib.request
+import urllib.parse
 from datetime import datetime
 import shutil
 import random
 import zipfile
 import tempfile
 import argparse
+import subprocess
+import re
 import torch
+import torch.distributed as dist
 
 from nanochat.common import compute_init, compute_cleanup, print0, get_base_dir, autodetect_device_type, download_file_with_lock
 from nanochat.tokenizer import HuggingFaceTokenizer, get_token_bytes
 from nanochat.checkpoint_manager import load_model
-from nanochat.core_eval import evaluate_task
+from nanochat.core_eval import evaluate_task, render_prompts_mc, render_prompts_schema, render_prompts_lm
 from nanochat.dataloader import tokenizing_distributed_data_loader_bos_bestfit
 from nanochat.loss_eval import evaluate_bpb
 from nanochat.engine import Engine
@@ -104,6 +113,228 @@ def get_hf_token_bytes(tokenizer, device="cpu"):
         token_bytes[token_id] = len(token_str.encode('utf-8'))
     return token_bytes
 
+
+# -----------------------------------------------------------------------------
+# Foundry Local loading utilities
+
+def _normalize_foundry_base_url(base_url: str) -> str:
+    base_url = (base_url or "").strip().rstrip("/")
+    if not base_url:
+        raise ValueError("Foundry base URL is empty")
+    return base_url
+
+
+def discover_foundry_base_url():
+    """Best-effort discovery of Foundry Local service URL."""
+    try:
+        result = subprocess.run(
+            ["foundry", "service", "status"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        text = (result.stdout or "") + "\n" + (result.stderr or "")
+        match = re.search(r"(https?://[^\s]+)/openai/status", text)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _normalize_path_for_match(text: str) -> str:
+    return "".join(ch.lower() if ch.isalnum() else " " for ch in text)
+
+
+def find_foundry_tokenizer_dir(model_id: str, tokenizer_dir: str | None = None):
+    """Find tokenizer.json for a Foundry Local model."""
+    if tokenizer_dir:
+        tk_path = os.path.join(tokenizer_dir, "tokenizer.json")
+        if not os.path.exists(tk_path):
+            raise FileNotFoundError(f"tokenizer.json not found in --foundry-tokenizer-dir: {tokenizer_dir}")
+        return tokenizer_dir
+
+    roots = []
+    env_dir = os.environ.get("FOUNDRY_LOCAL_MODEL_DIR", "").strip()
+    if env_dir:
+        roots.append(env_dir)
+    roots.append(os.path.join(os.path.expanduser("~"), ".foundry", "cache", "models"))
+
+    model_tokens = [tok for tok in _normalize_path_for_match(model_id).split() if len(tok) > 1]
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            if "tokenizer.json" not in filenames:
+                continue
+            path_tokens = set(_normalize_path_for_match(dirpath).split())
+            if all(tok in path_tokens for tok in model_tokens):
+                return dirpath
+    return None
+
+
+class FoundryLocalClient:
+    """OpenAI-compatible client for Foundry Local."""
+    def __init__(self, model_id: str, base_url: str, api_key: str | None, timeout: int = 120):
+        self.model_id = model_id
+        self.base_url = _normalize_foundry_base_url(base_url)
+        self.api_key = api_key or "local"
+        self.timeout = timeout
+
+    def _completion_urls(self):
+        if self.base_url.endswith("/v1") or self.base_url.endswith("/openai/v1"):
+            return [f"{self.base_url}/completions"]
+        return [
+            f"{self.base_url}/v1/completions",
+            f"{self.base_url}/openai/v1/completions",
+        ]
+
+    def load_model(self, ttl_seconds: int = 600):
+        model = urllib.parse.quote(self.model_id, safe="")
+        urls = [f"{self.base_url}/openai/load/{model}?ttl={int(ttl_seconds)}"]
+        if self.base_url.endswith("/openai"):
+            urls = [f"{self.base_url}/load/{model}?ttl={int(ttl_seconds)}"]
+        last_error = None
+        for url in urls:
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    method="GET",
+                )
+                with urllib.request.urlopen(request, timeout=self.timeout) as _:
+                    return
+            except Exception as e:
+                last_error = e
+        if last_error is not None:
+            raise RuntimeError(f"Failed to load Foundry model '{self.model_id}': {last_error}") from last_error
+
+    def _post_json(self, url: str, payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def completions(self, *, prompt: str, max_tokens: int, temperature: float, echo: bool = False, logprobs: int | None = None):
+        payload = {
+            "model": self.model_id,
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if echo:
+            payload["echo"] = True
+        if logprobs is not None:
+            payload["logprobs"] = logprobs
+
+        last_error = None
+        for url in self._completion_urls():
+            try:
+                return self._post_json(url, payload)
+            except Exception as e:
+                last_error = e
+        raise RuntimeError(f"Foundry Local request failed on all completion endpoints: {last_error}") from last_error
+
+    def score_continuation(self, prefix: str, continuation: str):
+        """Average token logprob of continuation, conditioned on prefix."""
+        full_prompt = prefix + continuation
+        response = self.completions(
+            prompt=full_prompt,
+            max_tokens=0,
+            temperature=0.0,
+            echo=True,
+            logprobs=1,
+        )
+        choices = response.get("choices") or []
+        if not choices:
+            raise RuntimeError("Foundry response has no choices")
+        choice = choices[0]
+        token_logprobs = (choice.get("logprobs") or {}).get("token_logprobs")
+        text_offset = (choice.get("logprobs") or {}).get("text_offset")
+        if token_logprobs is None or text_offset is None:
+            raise RuntimeError("Foundry completion did not return token logprobs/text_offset; logprob scoring is unavailable")
+        start_char = len(prefix)
+        continuation_lps = [
+            lp for lp, offset in zip(token_logprobs, text_offset)
+            if offset >= start_char and lp is not None
+        ]
+        if not continuation_lps:
+            raise RuntimeError("No continuation token logprobs returned by Foundry for scoring")
+        return sum(continuation_lps) / len(continuation_lps)
+
+    def generate(self, prompt: str, max_tokens: int):
+        response = self.completions(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=0.0,
+        )
+        choices = response.get("choices") or []
+        if not choices:
+            raise RuntimeError("Foundry response has no choices")
+        return choices[0].get("text", "")
+
+
+def evaluate_task_foundry(client: FoundryLocalClient, tokenizer, data, device, task_meta):
+    """
+    CORE task evaluation backed by Foundry Local API.
+    Uses logprob scoring for MC/schema and deterministic completion for LM.
+    """
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
+    correct = torch.zeros(len(data), dtype=torch.float32, device=device)
+
+    for idx in range(rank, len(data), world_size):
+        item = data[idx]
+        task_type = task_meta["task_type"]
+        num_fewshot = task_meta["num_fewshot"]
+        continuation_delimiter = task_meta["continuation_delimiter"]
+
+        fewshot_examples = []
+        if num_fewshot > 0:
+            rng = random.Random(1234 + idx)
+            available_indices = [i for i in range(len(data)) if i != idx]
+            fewshot_indices = rng.sample(available_indices, num_fewshot)
+            fewshot_examples = [data[i] for i in fewshot_indices]
+
+        if task_type == "multiple_choice":
+            prompts = render_prompts_mc(item, continuation_delimiter, fewshot_examples)
+            scores = []
+            for choice_text, prompt in zip(item["choices"], prompts):
+                prefix = prompt[:-len(choice_text)] if len(choice_text) > 0 else prompt
+                scores.append(client.score_continuation(prefix, choice_text))
+            pred_idx = max(range(len(scores)), key=lambda i: scores[i])
+            is_correct = pred_idx == item["gold"]
+        elif task_type == "schema":
+            prompts = render_prompts_schema(item, continuation_delimiter, fewshot_examples)
+            continuation = item["continuation"]
+            scores = []
+            for prompt in prompts:
+                prefix = prompt[:-len(continuation)] if len(continuation) > 0 else prompt
+                scores.append(client.score_continuation(prefix, continuation))
+            pred_idx = max(range(len(scores)), key=lambda i: scores[i])
+            is_correct = pred_idx == item["gold"]
+        elif task_type == "language_modeling":
+            prompt_without, prompt_with = render_prompts_lm(item, continuation_delimiter, fewshot_examples)
+            continuation = prompt_with[len(prompt_without):]
+            continuation_tokens = tokenizer(continuation)
+            max_tokens = max(1, len(continuation_tokens))
+            generated = client.generate(prompt_without, max_tokens=max_tokens)
+            is_correct = generated.startswith(continuation)
+        else:
+            raise ValueError(f"Unsupported task type: {task_type}")
+
+        correct[idx] = float(is_correct)
+
+    if world_size > 1:
+        dist.barrier()
+        dist.all_reduce(correct, op=dist.ReduceOp.SUM)
+    return correct.mean().item()
+
 # -----------------------------------------------------------------------------
 # CORE evaluation
 
@@ -131,7 +362,7 @@ def place_eval_bundle(file_path):
     print0(f"Placed eval_bundle directory at {eval_bundle_dir}")
 
 
-def evaluate_core(model, tokenizer, device, max_per_task=-1):
+def evaluate_core(model, tokenizer, device, max_per_task=-1, foundry_client: FoundryLocalClient | None = None):
     """
     Evaluate a base model on the CORE benchmark.
     Returns dict with results, centered_results, and core_metric.
@@ -186,7 +417,10 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1):
         if max_per_task > 0:
             data = data[:max_per_task]
 
-        accuracy = evaluate_task(model, tokenizer, data, device, task_meta)
+        if foundry_client is not None:
+            accuracy = evaluate_task_foundry(foundry_client, tokenizer, data, device, task_meta)
+        else:
+            accuracy = evaluate_task(model, tokenizer, data, device, task_meta)
         results[label] = accuracy
         random_baseline = random_baselines[label]
         centered_result = (accuracy - 0.01 * random_baseline) / (1.0 - 0.01 * random_baseline)
@@ -212,6 +446,13 @@ def main():
     parser = argparse.ArgumentParser(description="Base model evaluation")
     parser.add_argument('--eval', type=str, default='core,bpb,sample', help='Comma-separated evaluations to run: core,bpb,sample (default: all)')
     parser.add_argument('--hf-path', type=str, default=None, help='HuggingFace model path (e.g. openai-community/gpt2-xl)')
+    parser.add_argument('--foundry-model', type=str, default=None, help='Foundry Local model id (OpenAI-compatible, e.g. gpt-oss-2b)')
+    parser.add_argument('--foundry-base-url', type=str, default='', help='Foundry Local base URL (auto-detected if omitted)')
+    parser.add_argument('--foundry-api-key', type=str, default=os.environ.get("FOUNDRY_LOCAL_API_KEY", "local"), help='Foundry Local API key (default: env or "local")')
+    parser.add_argument('--foundry-tokenizer-dir', type=str, default=None, help='Path containing tokenizer.json for foundry model (auto-discovered if omitted)')
+    parser.add_argument('--foundry-timeout', type=int, default=120, help='HTTP timeout in seconds for Foundry requests')
+    parser.add_argument('--foundry-load-ttl', type=int, default=600, help='Auto-load Foundry model with this TTL before eval (set <=0 to disable)')
+    parser.add_argument('--append-report', action='store_true', help='Append this run to existing base-model-evaluation report section')
     parser.add_argument('--model-tag', type=str, default=None, help='nanochat model tag to identify the checkpoint directory')
     parser.add_argument('--step', type=int, default=None, help='Model step to load (default = last)')
     parser.add_argument('--max-per-task', type=int, default=-1, help='Max examples per CORE task (-1 = all)')
@@ -232,7 +473,43 @@ def main():
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init(device_type)
     # Load model and tokenizer
     is_hf_model = args.hf_path is not None
-    if is_hf_model:
+    is_foundry_model = args.foundry_model is not None
+    if sum(int(x) for x in [is_hf_model, is_foundry_model, args.model_tag is not None]) > 1:
+        parser.error("Choose exactly one model source: --hf-path OR --foundry-model OR --model-tag")
+
+    foundry_client = None
+    if is_foundry_model:
+        if any(mode in eval_modes for mode in ("bpb", "sample")):
+            parser.error("Foundry Local backend currently supports --eval core only")
+        foundry_base_url = args.foundry_base_url.strip()
+        if not foundry_base_url:
+            foundry_base_url = os.environ.get("FOUNDRY_LOCAL_ENDPOINT", "").strip()
+        if not foundry_base_url:
+            foundry_base_url = os.environ.get("FOUNDRY_LOCAL_BASE_URL", "").strip()
+        if not foundry_base_url:
+            foundry_base_url = discover_foundry_base_url() or "http://127.0.0.1:5273"
+        print0(f"Using Foundry base URL: {foundry_base_url}")
+
+        tokenizer_dir = find_foundry_tokenizer_dir(args.foundry_model, args.foundry_tokenizer_dir)
+        if tokenizer_dir is None:
+            parser.error("Could not find tokenizer.json for Foundry model. Set --foundry-tokenizer-dir explicitly.")
+        print0(f"Using Foundry tokenizer from: {tokenizer_dir}")
+        tokenizer = HuggingFaceTokenizer.from_directory(tokenizer_dir)
+        foundry_client = FoundryLocalClient(
+            model_id=args.foundry_model,
+            base_url=foundry_base_url,
+            api_key=args.foundry_api_key,
+            timeout=args.foundry_timeout,
+        )
+        if args.foundry_load_ttl > 0:
+            print0(f"Loading Foundry model: {args.foundry_model} (ttl={args.foundry_load_ttl})")
+            foundry_client.load_model(ttl_seconds=args.foundry_load_ttl)
+        model = None
+        sequence_len = 1024
+        token_bytes = None
+        model_name = f"foundry-local/{args.foundry_model}"
+        model_slug = f"foundry-local-{args.foundry_model}".replace("/", "-").replace(":", "-")
+    elif is_hf_model:
         model, tokenizer = load_hf_model(args.hf_path, device)
         sequence_len = model.max_seq_len or 1024
         token_bytes = get_hf_token_bytes(tokenizer, device=device)
@@ -255,7 +532,7 @@ def main():
     unconditioned_samples = []
 
     # --- Sampling ---
-    if 'sample' in eval_modes and not is_hf_model:
+    if 'sample' in eval_modes and not is_hf_model and not is_foundry_model:
         print0("\n" + "="*80)
         print0("Model Samples")
         print0("="*80)
@@ -287,11 +564,11 @@ def main():
                 print0("-" * 80)
                 print0(sample_str)
                 unconditioned_samples.append(sample_str)
-    elif 'sample' in eval_modes and is_hf_model:
-        print0("\nSkipping sampling for HuggingFace models (not supported)")
+    elif 'sample' in eval_modes and (is_hf_model or is_foundry_model):
+        print0("\nSkipping sampling for external models (HF/Foundry not supported)")
 
     # --- BPB evaluation ---
-    if 'bpb' in eval_modes:
+    if 'bpb' in eval_modes and not is_foundry_model:
         print0("\n" + "="*80)
         print0("BPB Evaluation")
         print0("="*80)
@@ -313,7 +590,7 @@ def main():
         print0("\n" + "="*80)
         print0("CORE Evaluation")
         print0("="*80)
-        core_results = evaluate_core(model, tokenizer, device, max_per_task=args.max_per_task)
+        core_results = evaluate_core(model, tokenizer, device, max_per_task=args.max_per_task, foundry_client=foundry_client)
 
         # Write CSV output
         if ddp_rank == 0:
@@ -346,6 +623,16 @@ def main():
         report_data.append({f"sample {i}": s for i, s in enumerate(samples)})
     if unconditioned_samples:
         report_data.append({f"unconditioned {i}": s for i, s in enumerate(unconditioned_samples)})
+
+    if args.append_report:
+        base_eval_report = os.path.join(get_base_dir(), "report", "base-model-evaluation.md")
+        if os.path.exists(base_eval_report):
+            with open(base_eval_report, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            # Keep previous section body, skip heading + timestamp line.
+            previous_body = "".join(lines[3:]) if len(lines) >= 3 else ""
+            if previous_body.strip():
+                report_data = [previous_body] + report_data
 
     get_report().log(section="Base model evaluation", data=report_data)
 
