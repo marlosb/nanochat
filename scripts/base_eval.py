@@ -160,18 +160,101 @@ def find_foundry_tokenizer_dir(model_id: str, tokenizer_dir: str | None = None):
     if env_dir:
         roots.append(env_dir)
     roots.append(os.path.join(os.path.expanduser("~"), ".foundry", "cache", "models"))
+    roots.append(os.path.join(os.path.expanduser("~"), ".aitk", "cache", "models"))
 
     model_tokens = [tok for tok in _normalize_path_for_match(model_id).split() if len(tok) > 1]
+    candidate_dirs = []
     for root in roots:
         if not os.path.isdir(root):
             continue
         for dirpath, _, filenames in os.walk(root):
             if "tokenizer.json" not in filenames:
                 continue
+            candidate_dirs.append(dirpath)
             path_tokens = set(_normalize_path_for_match(dirpath).split())
             if all(tok in path_tokens for tok in model_tokens):
                 return dirpath
+    # If no exact token match exists, fall back to the only tokenizer candidate.
+    if len(candidate_dirs) == 1:
+        return candidate_dirs[0]
     return None
+
+
+def list_foundry_models():
+    """Return discovered Foundry models from `foundry model list` output."""
+    try:
+        result = subprocess.run(
+            ["foundry", "model", "list"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        text = (result.stdout or "") + "\n" + (result.stderr or "")
+    except Exception:
+        return []
+
+    models = []
+    last_alias = ""
+    # Tabular output lines usually end with Model ID like "... some-id:1"
+    id_pattern = re.compile(r"(?P<id>[A-Za-z0-9._-]+:[0-9]+)\s*$")
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line or set(line.strip()) == {"-"}:
+            continue
+        match = id_pattern.search(line)
+        if not match:
+            continue
+        model_id = match.group("id")
+        left = line[:match.start()].rstrip()
+        parts = left.split()
+        # Alias is only populated on the first row of each grouped block.
+        if parts:
+            # Skip header line ("Alias Device Task ...")
+            if parts[0].lower() != "alias":
+                candidate_alias = parts[0]
+                if candidate_alias and candidate_alias.lower() not in {"gpu", "cpu", "npu"}:
+                    last_alias = candidate_alias
+        models.append({"alias": last_alias, "id": model_id})
+    return models
+
+
+def resolve_foundry_model_id(requested_model: str):
+    """
+    Resolve a user-provided Foundry model alias/id to an actual loadable model id.
+    Returns (resolved_id, suggestions_for_error).
+    """
+    requested = requested_model.strip()
+    if not requested:
+        return requested_model, []
+
+    models = list_foundry_models()
+    if not models:
+        return requested, []
+
+    lower = requested.lower()
+    # 1) Exact id match
+    for m in models:
+        if m["id"].lower() == lower:
+            return m["id"], []
+    # 2) Exact alias match
+    alias_matches = [m["id"] for m in models if m["alias"].lower() == lower]
+    if alias_matches:
+        # Prefer GPU first if multiple variants are listed.
+        alias_matches.sort(key=lambda mid: ("-gpu" not in mid.lower(), mid))
+        return alias_matches[0], alias_matches[1:]
+    # 3) Prefix/fuzzy id match
+    fuzzy = [m["id"] for m in models if lower in m["id"].lower() or lower in m["alias"].lower()]
+    if len(fuzzy) == 1:
+        return fuzzy[0], []
+    if fuzzy:
+        return requested, fuzzy[:8]
+
+    # 4) Family-level fallback suggestions (e.g. gpt-oss-2b -> gpt-oss-20b-...)
+    parts = [p for p in re.split(r"[-_]", lower) if p]
+    family = "-".join(parts[:2]) if len(parts) >= 2 else lower
+    family_matches = [m["id"] for m in models if family in m["id"].lower() or family in m["alias"].lower()]
+    return requested, family_matches[:8]
 
 
 class FoundryLocalClient:
@@ -439,6 +522,17 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1, foundry_client: Fou
     }
     return out
 
+
+def write_core_csv(output_csv_path, core_results):
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    with open(output_csv_path, 'w', encoding='utf-8', newline='') as f:
+        f.write(f"{'Task':<35}, {'Accuracy':<10}, {'Centered':<10}\n")
+        for label in core_results["results"]:
+            acc = core_results["results"][label]
+            centered = core_results["centered_results"][label]
+            f.write(f"{label:<35}, {acc:<10.6f}, {centered:<10.6f}\n")
+        f.write(f"{'CORE':<35}, {'':<10}, {core_results['core_metric']:<10.6f}\n")
+
 # -----------------------------------------------------------------------------
 # Main
 
@@ -490,25 +584,39 @@ def main():
             foundry_base_url = discover_foundry_base_url() or "http://127.0.0.1:5273"
         print0(f"Using Foundry base URL: {foundry_base_url}")
 
-        tokenizer_dir = find_foundry_tokenizer_dir(args.foundry_model, args.foundry_tokenizer_dir)
-        if tokenizer_dir is None:
-            parser.error("Could not find tokenizer.json for Foundry model. Set --foundry-tokenizer-dir explicitly.")
-        print0(f"Using Foundry tokenizer from: {tokenizer_dir}")
-        tokenizer = HuggingFaceTokenizer.from_directory(tokenizer_dir)
+        resolved_foundry_model, model_suggestions = resolve_foundry_model_id(args.foundry_model)
+        if resolved_foundry_model != args.foundry_model:
+            print0(f"Resolved Foundry model '{args.foundry_model}' -> '{resolved_foundry_model}'")
         foundry_client = FoundryLocalClient(
-            model_id=args.foundry_model,
+            model_id=resolved_foundry_model,
             base_url=foundry_base_url,
             api_key=args.foundry_api_key,
             timeout=args.foundry_timeout,
         )
         if args.foundry_load_ttl > 0:
-            print0(f"Loading Foundry model: {args.foundry_model} (ttl={args.foundry_load_ttl})")
-            foundry_client.load_model(ttl_seconds=args.foundry_load_ttl)
+            print0(f"Loading Foundry model: {resolved_foundry_model} (ttl={args.foundry_load_ttl})")
+            try:
+                foundry_client.load_model(ttl_seconds=args.foundry_load_ttl)
+            except RuntimeError as e:
+                if model_suggestions:
+                    parser.error(
+                        f"{e}\nClosest available model ids for '{args.foundry_model}': "
+                        + ", ".join(model_suggestions)
+                    )
+                raise
+        tokenizer_dir = find_foundry_tokenizer_dir(resolved_foundry_model, args.foundry_tokenizer_dir)
+        if tokenizer_dir is None:
+            parser.error(
+                "Could not find tokenizer.json for Foundry model. "
+                "Set --foundry-tokenizer-dir explicitly (e.g. under ~/.foundry/cache/models or ~/.aitk/cache/models)."
+            )
+        print0(f"Using Foundry tokenizer from: {tokenizer_dir}")
+        tokenizer = HuggingFaceTokenizer.from_directory(tokenizer_dir)
         model = None
         sequence_len = 1024
         token_bytes = None
         model_name = f"foundry-local/{args.foundry_model}"
-        model_slug = f"foundry-local-{args.foundry_model}".replace("/", "-").replace(":", "-")
+        model_slug = args.foundry_model.replace("/", "-").replace(":", "-")
     elif is_hf_model:
         model, tokenizer = load_hf_model(args.hf_path, device)
         sequence_len = model.max_seq_len or 1024
@@ -596,14 +704,7 @@ def main():
         if ddp_rank == 0:
             base_dir = get_base_dir()
             output_csv_path = os.path.join(base_dir, "base_eval", f"{model_slug}.csv")
-            os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
-            with open(output_csv_path, 'w', encoding='utf-8', newline='') as f:
-                f.write(f"{'Task':<35}, {'Accuracy':<10}, {'Centered':<10}\n")
-                for label in core_results["results"]:
-                    acc = core_results["results"][label]
-                    centered = core_results["centered_results"][label]
-                    f.write(f"{label:<35}, {acc:<10.6f}, {centered:<10.6f}\n")
-                f.write(f"{'CORE':<35}, {'':<10}, {core_results['core_metric']:<10.6f}\n")
+            write_core_csv(output_csv_path, core_results)
             print0(f"\nResults written to: {output_csv_path}")
             print0(f"CORE metric: {core_results['core_metric']:.4f}")
 
