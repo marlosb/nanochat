@@ -265,13 +265,34 @@ class FoundryLocalClient:
         self.api_key = api_key or "local"
         self.timeout = timeout
 
-    def _completion_urls(self):
+    def _completion_endpoints(self):
+        model_encoded = urllib.parse.quote(self.model_id, safe="")
+        # Try OpenAI-style and Azure deployment-style routes.
         if self.base_url.endswith("/v1") or self.base_url.endswith("/openai/v1"):
-            return [f"{self.base_url}/completions"]
-        return [
-            f"{self.base_url}/v1/completions",
-            f"{self.base_url}/openai/v1/completions",
+            return [
+                {"url": f"{self.base_url}/completions", "path_kind": "openai"},
+            ]
+
+        base = self.base_url
+        api_versions = [
+            "2024-02-01",
+            "2023-05-15",
         ]
+        endpoints = [
+            {"url": f"{base}/v1/completions", "path_kind": "openai"},
+            {"url": f"{base}/openai/v1/completions", "path_kind": "openai"},
+            {"url": f"{base}/openai/completions", "path_kind": "openai"},
+        ]
+        for api_version in api_versions:
+            endpoints.append({
+                "url": f"{base}/openai/deployments/{model_encoded}/completions?api-version={api_version}",
+                "path_kind": "azure_deployment",
+            })
+            endpoints.append({
+                "url": f"{base}/deployments/{model_encoded}/completions?api-version={api_version}",
+                "path_kind": "azure_deployment",
+            })
+        return endpoints
 
     def load_model(self, ttl_seconds: int = 600):
         model = urllib.parse.quote(self.model_id, safe="")
@@ -304,24 +325,33 @@ class FoundryLocalClient:
             return json.loads(response.read().decode("utf-8"))
 
     def completions(self, *, prompt: str, max_tokens: int, temperature: float, echo: bool = False, logprobs: int | None = None):
-        payload = {
+        base_payload = {
             "model": self.model_id,
             "prompt": prompt,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
         if echo:
-            payload["echo"] = True
+            base_payload["echo"] = True
         if logprobs is not None:
-            payload["logprobs"] = logprobs
+            base_payload["logprobs"] = logprobs
 
+        attempted = []
         last_error = None
-        for url in self._completion_urls():
+        for endpoint in self._completion_endpoints():
+            payload = dict(base_payload)
+            if endpoint["path_kind"] == "azure_deployment":
+                # Azure deployment paths identify the model in URL; omit body "model".
+                payload.pop("model", None)
             try:
-                return self._post_json(url, payload)
+                return self._post_json(endpoint["url"], payload)
             except Exception as e:
+                attempted.append(endpoint["url"])
                 last_error = e
-        raise RuntimeError(f"Foundry Local request failed on all completion endpoints: {last_error}") from last_error
+        raise RuntimeError(
+            "Foundry Local request failed on all completion endpoints. "
+            f"Last error: {last_error}. Tried: {attempted}"
+        ) from last_error
 
     def score_continuation(self, prefix: str, continuation: str):
         """Average token logprob of continuation, conditioned on prefix."""
