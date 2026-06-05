@@ -570,13 +570,13 @@ def main():
     parser = argparse.ArgumentParser(description="Base model evaluation")
     parser.add_argument('--eval', type=str, default='core,bpb,sample', help='Comma-separated evaluations to run: core,bpb,sample (default: all)')
     parser.add_argument('--hf-path', type=str, default=None, help='HuggingFace model path (e.g. openai-community/gpt2-xl)')
-    parser.add_argument('--foundry-model', type=str, default=None, help='Foundry Local model id (OpenAI-compatible, e.g. gpt-oss-2b)')
-    parser.add_argument('--foundry-base-url', type=str, default='', help='Foundry Local base URL (auto-detected if omitted)')
-    parser.add_argument('--foundry-api-key', type=str, default=os.environ.get("FOUNDRY_LOCAL_API_KEY", "local"), help='Foundry Local API key (default: env or "local")')
-    parser.add_argument('--foundry-tokenizer-dir', type=str, default=None, help='Path containing tokenizer.json for foundry model (auto-discovered if omitted)')
-    parser.add_argument('--foundry-timeout', type=int, default=120, help='HTTP timeout in seconds for Foundry requests')
-    parser.add_argument('--foundry-load-ttl', type=int, default=600, help='Auto-load Foundry model with this TTL before eval (set <=0 to disable)')
-    parser.add_argument('--append-report', action='store_true', help='Append this run to existing base-model-evaluation report section')
+    parser.add_argument('--foundry-model', type=str, default=None, help='Foundry Local model id/alias for CORE eval')
+    parser.add_argument('--foundry-base-url', type=str, default=os.environ.get("FOUNDRY_LOCAL_BASE_URL", "http://127.0.0.1:5273"), help='Foundry Local base URL')
+    parser.add_argument('--foundry-api-key', type=str, default=os.environ.get("FOUNDRY_LOCAL_API_KEY", "local"), help='Foundry Local API key')
+    parser.add_argument('--foundry-tokenizer-dir', type=str, default=None, help='Directory containing tokenizer.json (optional)')
+    parser.add_argument('--foundry-timeout', type=int, default=120, help='Foundry HTTP timeout in seconds')
+    parser.add_argument('--foundry-load-ttl', type=int, default=600, help='Foundry model load ttl in seconds (<=0 skips auto-load)')
+    parser.add_argument('--append-report', action='store_true', help='Append to existing base-model-evaluation report section')
     parser.add_argument('--model-tag', type=str, default=None, help='nanochat model tag to identify the checkpoint directory')
     parser.add_argument('--step', type=int, default=None, help='Model step to load (default = last)')
     parser.add_argument('--max-per-task', type=int, default=-1, help='Max examples per CORE task (-1 = all)')
@@ -591,6 +591,11 @@ def main():
     invalid = eval_modes - valid_modes
     if invalid:
         parser.error(f"Invalid eval modes: {invalid}. Valid: {valid_modes}")
+
+    if args.foundry_model:
+        from scripts.base_eval_foundry import run_foundry_eval
+        run_foundry_eval(args)
+        return
 
     # Distributed / precision setup
     device_type = autodetect_device_type() if args.device_type == '' else args.device_type
