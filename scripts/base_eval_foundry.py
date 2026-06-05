@@ -167,7 +167,20 @@ class FoundryLocalClient:
         return bases
 
     def _completion_endpoints(self):
-        model_encoded = urllib.parse.quote(self.model_id, safe="")
+        model_candidates = [self.model_id]
+        if ":" in self.model_id:
+            model_candidates.append(self.model_id.split(":", 1)[0])
+        # Older/newer Foundry builds can expose different Azure API versions.
+        api_versions = [
+            "2025-01-01-preview",
+            "2024-10-21",
+            "2024-06-01",
+            "2024-05-01-preview",
+            "2024-02-15-preview",
+            "2024-02-01",
+            "2023-12-01-preview",
+            "2023-05-15",
+        ]
         endpoints = []
         for base in self.inference_bases:
             endpoints.extend(
@@ -175,16 +188,33 @@ class FoundryLocalClient:
                     (f"{base}/v1/completions", "openai"),
                     (f"{base}/openai/v1/completions", "openai"),
                     (f"{base}/openai/completions", "openai"),
-                    (f"{base}/openai/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
-                    (f"{base}/openai/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
-                    (f"{base}/deployments/{model_encoded}/completions?api-version=2024-02-01", "azure"),
-                    (f"{base}/deployments/{model_encoded}/completions?api-version=2023-05-15", "azure"),
                 ]
             )
+            for model in model_candidates:
+                model_encoded = urllib.parse.quote(model, safe="")
+                for api_version in api_versions:
+                    endpoints.append(
+                        (f"{base}/openai/deployments/{model_encoded}/completions?api-version={api_version}", "azure")
+                    )
+                    endpoints.append(
+                        (f"{base}/deployments/{model_encoded}/completions?api-version={api_version}", "azure")
+                    )
         return endpoints
 
     def _chat_endpoints(self):
-        model_encoded = urllib.parse.quote(self.model_id, safe="")
+        model_candidates = [self.model_id]
+        if ":" in self.model_id:
+            model_candidates.append(self.model_id.split(":", 1)[0])
+        api_versions = [
+            "2025-01-01-preview",
+            "2024-10-21",
+            "2024-06-01",
+            "2024-05-01-preview",
+            "2024-02-15-preview",
+            "2024-02-01",
+            "2023-12-01-preview",
+            "2023-05-15",
+        ]
         endpoints = []
         for base in self.inference_bases:
             endpoints.extend(
@@ -192,12 +222,17 @@ class FoundryLocalClient:
                     (f"{base}/v1/chat/completions", "openai"),
                     (f"{base}/openai/v1/chat/completions", "openai"),
                     (f"{base}/openai/chat/completions", "openai"),
-                    (f"{base}/openai/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
-                    (f"{base}/openai/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
-                    (f"{base}/deployments/{model_encoded}/chat/completions?api-version=2024-02-01", "azure"),
-                    (f"{base}/deployments/{model_encoded}/chat/completions?api-version=2023-05-15", "azure"),
                 ]
             )
+            for model in model_candidates:
+                model_encoded = urllib.parse.quote(model, safe="")
+                for api_version in api_versions:
+                    endpoints.append(
+                        (f"{base}/openai/deployments/{model_encoded}/chat/completions?api-version={api_version}", "azure")
+                    )
+                    endpoints.append(
+                        (f"{base}/deployments/{model_encoded}/chat/completions?api-version={api_version}", "azure")
+                    )
         return endpoints
 
     def load_model(self, ttl_seconds: int):
