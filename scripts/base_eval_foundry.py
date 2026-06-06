@@ -409,6 +409,18 @@ def _schema_prompt_for_chat(item, fewshot_examples):
     return "\n".join(lines)
 
 
+def _estimate_max_tokens_from_text(text: str):
+    """
+    Estimate a safe max_tokens budget from raw text when no local tokenizer is available.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return 1
+    word_estimate = max(1, len(stripped.split()))
+    char_estimate = max(1, len(stripped) // 3)
+    return max(1, min(512, max(word_estimate, char_estimate)))
+
+
 def evaluate_task_foundry(client: FoundryLocalClient, tokenizer, data, device, task_meta):
     rank = dist.get_rank() if dist.is_initialized() else 0
     world_size = dist.get_world_size() if dist.is_initialized() else 1
@@ -457,7 +469,10 @@ def evaluate_task_foundry(client: FoundryLocalClient, tokenizer, data, device, t
         elif task_type == "language_modeling":
             prompt_without, prompt_with = render_prompts_lm(item, continuation_delimiter, fewshot_examples)
             continuation = prompt_with[len(prompt_without):]
-            max_tokens = max(1, len(tokenizer(continuation)))
+            if tokenizer is not None:
+                max_tokens = max(1, len(tokenizer(continuation)))
+            else:
+                max_tokens = _estimate_max_tokens_from_text(continuation)
             generated = client.generate(prompt_without, max_tokens=max_tokens)
             is_correct = generated.startswith(continuation)
         else:
@@ -546,14 +561,16 @@ def run_foundry_eval(args: argparse.Namespace):
         print0(f"Loading Foundry model: {args.foundry_model} (ttl={args.foundry_load_ttl})")
         client.load_model(args.foundry_load_ttl)
 
+    tokenizer = None
     tokenizer_dir = find_foundry_tokenizer_dir(args.foundry_model, args.foundry_tokenizer_dir)
-    if tokenizer_dir is None:
-        raise FileNotFoundError(
-            "Could not find tokenizer.json for Foundry model. Use --foundry-tokenizer-dir "
-            "with a directory like ~/.foundry/cache/models/<publisher>/<model>/v*/"
+    if tokenizer_dir is not None:
+        print0(f"Using Foundry tokenizer from: {tokenizer_dir}")
+        tokenizer = HuggingFaceTokenizer.from_directory(tokenizer_dir)
+    else:
+        print0(
+            "Foundry tokenizer.json not found; continuing with raw-text prompts only. "
+            "Token-based generation length will be estimated."
         )
-    print0(f"Using Foundry tokenizer from: {tokenizer_dir}")
-    tokenizer = HuggingFaceTokenizer.from_directory(tokenizer_dir)
 
     model_name = f"foundry-local/{args.foundry_model}"
     model_slug = args.foundry_model.replace("/", "-").replace(":", "-")
