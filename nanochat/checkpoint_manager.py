@@ -39,6 +39,38 @@ def _patch_missing_keys(model_data, model_config):
         model_data["x0_lambdas"] = torch.zeros(n_layer)
         log0(f"Patching missing x0_lambdas in model data to 0.0")
 
+# Keys for newer architecture features that gate/add into the residual stream.
+# Older checkpoints predate these; filling them with zeros makes each feature a
+# no-op, reproducing the checkpoint's original forward computation:
+#   - smear_lambda == 0        -> smear path disabled
+#   - backout_lambda == 0      -> mid-layer backout disabled
+#   - value_embeds[i] == 0     -> value-embedding residual disabled (v + gate*0 = v)
+#   - ve_gate/smear_gate == 0  -> no-ops once the above are zero
+_ZERO_INIT_MISSING_PATTERNS = (
+    r"^smear_lambda$",
+    r"^smear_gate\.weight$",
+    r"^backout_lambda$",
+    r"^value_embeds\.\d+\.weight$",
+    r"^transformer\.h\.\d+\.attn\.ve_gate\.weight$",
+)
+
+def _patch_missing_model_keys(model, model_data):
+    """Zero-fill missing newer-feature params so older checkpoints load (strict)."""
+    patterns = [re.compile(p) for p in _ZERO_INIT_MISSING_PATTERNS]
+    target_state = model.state_dict()
+    # Match the dtype of the checkpoint's floating-point tensors so the assembled
+    # state dict stays homogeneous (e.g. float on CPU, bfloat16 on CUDA).
+    ref_dtype = next((v.dtype for v in model_data.values() if v.is_floating_point()), None)
+    for key, tensor in target_state.items():
+        if key in model_data:
+            continue
+        if any(p.match(key) for p in patterns):
+            zeros = torch.zeros_like(tensor)
+            if ref_dtype is not None and zeros.is_floating_point():
+                zeros = zeros.to(ref_dtype)
+            model_data[key] = zeros
+            log0(f"Patching missing {key} with zeros (disabled feature) to load older checkpoint")
+
 def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data, rank=0):
     if rank == 0:
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -102,6 +134,7 @@ def build_model(checkpoint_dir, step, device, phase):
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init
+    _patch_missing_model_keys(model, model_data)
     model.load_state_dict(model_data, strict=True, assign=True)
     # Put the model in the right training phase / mode
     if phase == "eval":
