@@ -1,0 +1,25 @@
+Benchmark Results (Centered Accuracy)
+
+Model                              hswag_0s     arc_e     arc_c      copa      piqa    g_piqa      obqa   lambada    calame     hswag      wino     winog   bb_dyck   lsat_ar     bb_cs    bb_ops    bb_rcl      CORE
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Polygl0t-Tucano2-0.6B-Base         0.259580  0.456790  0.131991  0.140000  0.267682  0.560000  0.098667  0.458568  0.623314  0.268104  0.208791  0.087608  0.093000  0.032609  0.532576  0.438095  0.031250  0.275802
+Polygl0t-Tucano2-qwen-1.5B-Base    0.376603  0.580247  0.261745  0.300000  0.317737  0.520000  0.176000  0.582961  0.643064  0.381659  0.347985  0.172849  0.147000  0.016304  0.557576  0.580952  0.000000  0.350746
+TucanoBR-Tucano-1b1                0.228952  0.312570  0.020134  0.400000  0.270947  0.380000  0.117333  0.315544  0.477360  0.224907  0.032967  0.032360  0.148000  0.043478  0.550000  0.371429  0.000000  0.230940
+TucanoBR-Tucano-630m               0.176075  0.278900  0.006711  0.260000  0.238302  0.280000  0.101333  0.300990  0.489403  0.174486  0.157509  0.014996  0.124000  0.048913  0.468182  0.204762  0.000000  0.195563
+openai-community-gpt2              0.058475  0.041526 -0.024608  0.220000  0.010881  0.060000 -0.005333  0.078789  0.054432  0.056597  0.040293  0.008682  0.072000  0.059783  0.385606  0.400000  0.000000  0.089242
+
+Legend:
+  hswag_0s   = hellaswag_zeroshot
+  arc_e      = arc_easy
+  arc_c      = arc_challenge
+  g_piqa     = global_piqa
+  obqa       = openbook_qa
+  lambada    = lambada_openai
+  hswag      = hellaswag
+  wino       = winograd
+  winog      = winogrande
+  bb_dyck    = bigbench_dyck_languages
+  lsat_ar    = agi_eval_lsat_ar
+  bb_cs      = bigbench_cs_algorithms
+  bb_ops     = bigbench_operators
+  bb_rcl     = bigbench_repeat_copy_logic

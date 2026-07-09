@@ -1,0 +1,19 @@
+Task                               , Accuracy  , Centered  
+hellaswag_zeroshot                 , 0.444685  , 0.259580  
+arc_easy                           , 0.592593  , 0.456790  
+arc_challenge                      , 0.348993  , 0.131991  
+copa                               , 0.570000  , 0.140000  
+piqa                               , 0.633841  , 0.267682  
+global_piqa                        , 0.780000  , 0.560000  
+openbook_qa                        , 0.324000  , 0.098667  
+lambada_openai                     , 0.458568  , 0.458568  
+calame                             , 0.623314  , 0.623314  
+hellaswag                          , 0.451078  , 0.268104  
+winograd                           , 0.604396  , 0.208791  
+winogrande                         , 0.543804  , 0.087608  
+bigbench_dyck_languages            , 0.093000  , 0.093000  
+agi_eval_lsat_ar                   , 0.226087  , 0.032609  
+bigbench_cs_algorithms             , 0.532576  , 0.532576  
+bigbench_operators                 , 0.438095  , 0.438095  
+bigbench_repeat_copy_logic         , 0.031250  , 0.031250  
+CORE                               ,           , 0.275802  
