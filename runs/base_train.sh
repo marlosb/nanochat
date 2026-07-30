@@ -31,6 +31,7 @@ DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
 TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-77824}"
 CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-60000}"
 EVAL_EVERY="${EVAL_EVERY:-20000}"
+SAMPLE_EVERY="${SAMPLE_EVERY:-10000}"
 TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
 SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-2.35}"
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
@@ -72,6 +73,6 @@ run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
 # Base model (pretraining) - stage 1 on gigaverbo-v2
 
 # d24 model tuned for 2x H100 runs.
-run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --eval-every="$EVAL_EVERY" --save-every="$CHECKPOINT_EVERY" --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
+run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --eval-every="$EVAL_EVERY" --sample-every="$SAMPLE_EVERY" --save-every="$CHECKPOINT_EVERY" --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
 # evaluate the model: CORE metric, BPB on train/val, and draw samples
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- --device-batch-size="$DEVICE_BATCH_SIZE"
