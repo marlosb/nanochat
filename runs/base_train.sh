@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script is configured to train your own GPT-2 grade LLM (pretraining + finetuning)
-# It is designed to run on a blank single H100 GPU node and takes longer than speedrun.sh
+# It is designed to run on a blank 2x H100 GPU node and takes longer than speedrun.sh
 # because it runs an additional base pretraining stage on gigaverbo-v2-synth.
 
 # 1) Example launch (simplest):
@@ -26,9 +26,9 @@ run_cmd() {
 
 # Default intermediate artifacts directory is in ~/.cache/nanochat
 export OMP_NUM_THREADS=1
-NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-2}"
 DEVICE_BATCH_SIZE="${DEVICE_BATCH_SIZE:-19}"
-TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-38912}"
+TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-77824}"
 CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-60000}"
 EVAL_EVERY="${EVAL_EVERY:-20000}"
 TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
@@ -71,7 +71,7 @@ run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 57
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
 
-# d24 model tuned for single H100 runs.
+# d24 model tuned for 2x H100 runs.
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --eval-every="$EVAL_EVERY" --save-every="$CHECKPOINT_EVERY" --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
 # evaluate the model: CORE metric, BPB on train/val, and draw samples
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- --device-batch-size="$DEVICE_BATCH_SIZE"
