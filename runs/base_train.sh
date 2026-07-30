@@ -54,9 +54,7 @@ source .venv/bin/activate
 
 # -----------------------------------------------------------------------------
 # wandb setup
-if [ -z "$WANDB_RUN" ]; then
-    WANDB_RUN=june
-fi
+WANDB_RUN="${WANDB_RUN:-july}"
 
 # -----------------------------------------------------------------------------
 # During the course of the run, we will be writing markdown reports to the report/
