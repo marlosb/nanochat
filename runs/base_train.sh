@@ -33,7 +33,7 @@ CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-60000}"
 EVAL_EVERY="${EVAL_EVERY:-20000}"
 SAMPLE_EVERY="${SAMPLE_EVERY:-10000}"
 CORE_METRIC_EVERY="${CORE_METRIC_EVERY:-10000}"
-TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-100}"
+TARGET_PARAM_DATA_RATIO="${TARGET_PARAM_DATA_RATIO:-120}"
 SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-2.35}"
 export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat"
 run_cmd mkdir -p "$NANOCHAT_BASE_DIR"
@@ -67,8 +67,8 @@ run_cmd python -m nanochat.report reset
 # -----------------------------------------------------------------------------
 # Pretraining datasets
 
-# Download 100 training shards plus the validation shard for gigaverbo-v2.
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 100
+# Download 120 training shards plus the validation shard for gigaverbo-v2.
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 120
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
