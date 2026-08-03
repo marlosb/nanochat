@@ -67,13 +67,16 @@ run_cmd python -m nanochat.report reset
 # -----------------------------------------------------------------------------
 # Pretraining datasets
 
-# Download 120 training shards plus the validation shard for gigaverbo-v2.
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 120
+# Download enough data to start, then fetch the remaining shards during training.
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 4
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2 -n 120 &
+DATASET_DOWNLOAD_PID=$!
 
 # -----------------------------------------------------------------------------
 # Base model (pretraining) - stage 1 on gigaverbo-v2
 
 # d24 model tuned for 2x H100 runs.
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_train -- --depth=24 --target-param-data-ratio="$TARGET_PARAM_DATA_RATIO" --device-batch-size="$DEVICE_BATCH_SIZE" --total-batch-size="$TOTAL_BATCH_SIZE" --eval-every="$EVAL_EVERY" --sample-every="$SAMPLE_EVERY" --core-metric-every="$CORE_METRIC_EVERY" --save-every="$CHECKPOINT_EVERY" --fp8 --dataset gigaverbo-v2 --run="$WANDB_RUN"
+wait "$DATASET_DOWNLOAD_PID"
 # evaluate the model: CORE metric, BPB on train/val, and draw samples
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- --device-batch-size="$DEVICE_BATCH_SIZE"

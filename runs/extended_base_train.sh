@@ -45,8 +45,10 @@ print_divider
 echo "[RUN] source .venv/bin/activate"
 source .venv/bin/activate
 
-# Download all 37 training shards plus the final shard used for validation.
-run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n -1
+# Download enough data to start, then fetch the remaining shards during training.
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n 4
+run_cmd python -m nanochat.dataset --dataset gigaverbo-v2-synth -n -1 &
+DATASET_DOWNLOAD_PID=$!
 
 LAST_BASE_STEP=$(python -c "import os; from nanochat.checkpoint_manager import find_last_step; from nanochat.common import get_base_dir; print(find_last_step(os.path.join(get_base_dir(), 'base_checkpoints', 'd24')))")
 SYNTH_EXTRA_STEPS=$(python -c "import math; print(math.ceil(float('${SYNTH_TARGET_PARAM_DATA_RATIO}') * 780142272 / int('${TOTAL_BATCH_SIZE}')))")
@@ -73,6 +75,8 @@ run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base
     --resume-model-tag=d24 \
     --resume-from-step="$LAST_BASE_STEP" \
     --run="$WANDB_RUN"
+
+wait "$DATASET_DOWNLOAD_PID"
 
 run_cmd torchrun --standalone --nproc_per_node="$NPROC_PER_NODE" -m scripts.base_eval -- \
     --device-batch-size="$DEVICE_BATCH_SIZE"

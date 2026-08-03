@@ -33,9 +33,14 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset_ta
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
 
     warn_on_legacy = ddp_rank == 0 and split == "train" # rank 0 on train split will warn on legacy
-    parquet_paths = list_parquet_files(warn_on_legacy=warn_on_legacy, dataset_tag=dataset_tag)
-    assert len(parquet_paths) != 0, "No dataset parquet files found, did you run dataset.py?"
-    parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
+    def get_parquet_paths(warn=False):
+        paths = list_parquet_files(warn_on_legacy=warn, dataset_tag=dataset_tag)
+        assert len(paths) != 0, "No dataset parquet files found, did you run dataset.py?"
+        paths = paths[:-1] if split == "train" else paths[-1:]
+        assert len(paths) != 0, f"No parquet files available for the {split} split"
+        return paths
+
+    parquet_paths = get_parquet_paths(warn=warn_on_legacy)
 
     resume_pq_idx = resume_state_dict["pq_idx"] if resume_state_dict is not None else 0
     resume_rg_idx = resume_state_dict["rg_idx"] if resume_state_dict is not None else None
@@ -45,6 +50,9 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset_ta
     epoch = resume_epoch
 
     while True:  # iterate infinitely (multi-epoch)
+        if not first_pass:
+            # Pick up shards that finished downloading while the previous epoch ran.
+            parquet_paths = get_parquet_paths()
         pq_idx = resume_pq_idx if first_pass else 0
         while pq_idx < len(parquet_paths):
             filepath = parquet_paths[pq_idx]
