@@ -28,9 +28,9 @@ CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-60000}"
 EVAL_EVERY="${EVAL_EVERY:-20000}"
 SAMPLE_EVERY="${SAMPLE_EVERY:-10000}"
 CORE_METRIC_EVERY="${CORE_METRIC_EVERY:-10000}"
-# 2.35 covers the original 10-shard subset; 8.70 scales it to all 37
-# training shards. The 38th and final shard is reserved for validation.
-SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-8.70}"
+# 11.634342 budgets approximately 9.076B tokens, matching the estimated
+# contents of all 37 training shards. The 38th shard is reserved for validation.
+SYNTH_TARGET_PARAM_DATA_RATIO="${SYNTH_TARGET_PARAM_DATA_RATIO:-11.634342}"
 # Decay throughout the short continuation instead of adding another plateau.
 SYNTH_WARMDOWN_RATIO="${SYNTH_WARMDOWN_RATIO:-1.0}"
 WANDB_RUN="${WANDB_RUN:-extended}"
