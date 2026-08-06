@@ -256,3 +256,5 @@ if __name__ == "__main__":
     # Report results
     successful = sum(1 for success in results if success)
     print(f"Done! Downloaded: {successful}/{len(ids_to_download)} shards to {data_dir}")
+    if successful != len(ids_to_download):
+        raise SystemExit(1)
