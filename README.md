@@ -118,6 +118,57 @@ The important thing to note is that nanochat is written and configured around on
 
 The script [runs/runcpu.sh](runs/runcpu.sh) shows a very simple example of running on CPU or Apple Silicon. It dramatically shrinks the LLM that is being trained to make things fit into a reasonable time interval of a few ten minutes of training. You will not get strong results in this way.
 
+## Hugging Face evaluation benchmark
+
+The benchmark evaluates seven Hugging Face models: GPT-2, Tucano2-0.6B-Base,
+Tucano2-qwen-1.5B-Base, Tucano-630m, Tucano-1b1, marlosb/ArthurFriedenreich,
+and marlosb/CharlesMiller. Local checkpoints are not included in this benchmark.
+
+With the evaluation dependencies installed (`uv sync --extra gpu --group dev`),
+run it on Linux with:
+
+```bash
+bash runs/base_eval_hf_benchmark.sh --python .venv/bin/python --device-type cuda
+```
+
+On Windows, use `runs\base_eval_hf_benchmark.bat` with the same options.
+Both launchers default to CORE over all examples, run models sequentially, and
+continue after a model fails while returning a nonzero final exit code.
+Use `--models "owner/model1,owner/model2"` to select models, `--max-per-task 100`
+for a shorter run, `--stop-on-error` to stop after a failure, or `--dry-run` to
+inspect commands. Few-shot tasks need more examples than their shot count
+(currently at most 10).
+
+ArthurFriedenreich and CharlesMiller require custom Transformers implementations.
+The launchers enable `--trust-remote-code` only for these two repository IDs;
+running them executes Python code downloaded from those repositories.
+
+Results go to `<NANOCHAT_BASE_DIR>/base_eval/<model-id-with-slashes-replaced>.csv`.
+The launchers append model sections to `report/base-model-evaluation.md`.
+Without `--nanochat-base-dir` or the corresponding environment variable, the
+base directory defaults to `~/.cache/nanochat`.
+
+To run up to two models concurrently on one GPU, use the parallel launcher
+(Bash 4 or newer):
+
+```bash
+bash runs/base_eval_hf_benchmark_parallel.sh --python .venv/bin/python
+```
+
+It uses CUDA by default, shares cached weights and evaluation data, and starts
+the next model when a slot becomes available. Each model gets an isolated
+numbered directory under `<NANOCHAT_BASE_DIR>/parallel_eval`, containing
+`evaluation.log`, `base_eval/<model-id>.csv`, and `report/base-model-evaluation.md`.
+Use `--output-dir` to change this output root. Repeating a run overwrites matching
+model outputs. `--stop-on-error` stops scheduling new models after an observed
+failure but lets active models finish. Interrupting the launcher terminates its
+active evaluator processes.
+
+Measure throughput and peak VRAM: weights are only part of the memory cost,
+and more concurrency does not necessarily improve throughput. Both processes
+use the same visible GPU; set `CUDA_VISIBLE_DEVICES` to select it if necessary.
+Do not use `torchrun --nproc_per_node=2` on one GPU: that expects two GPUs.
+
 ## Precision / dtype
 
 nanochat does not use `torch.amp.autocast`. Instead, precision is managed explicitly through a single global `COMPUTE_DTYPE` (defined in `nanochat/common.py`). By default this is auto-detected based on your hardware:

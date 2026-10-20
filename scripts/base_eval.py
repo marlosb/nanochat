@@ -74,13 +74,13 @@ class ModelWrapper:
         return next(self.model.parameters()).device
 
 
-def load_hf_model(hf_path: str, device):
+def load_hf_model(hf_path: str, device, trust_remote_code=False):
     """Load a HuggingFace model and tokenizer."""
     print0(f"Loading HuggingFace model from: {hf_path}")
     from transformers import AutoModelForCausalLM
 
     # Reduce VRAM pressure on CUDA by loading in reduced precision.
-    load_kwargs = {"low_cpu_mem_usage": True}
+    load_kwargs = {"low_cpu_mem_usage": True, "trust_remote_code": trust_remote_code}
     if device.type == "cuda":
         bf16_ok = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
         load_kwargs["torch_dtype"] = torch.bfloat16 if bf16_ok else torch.float16
@@ -93,7 +93,7 @@ def load_hf_model(hf_path: str, device):
     max_seq_len = None
     config = getattr(model, "config", None)
     if config is not None:
-        for attr in ("max_position_embeddings", "n_positions", "seq_length"):
+        for attr in ("max_position_embeddings", "n_positions", "seq_length", "sequence_len"):
             value = getattr(config, attr, None)
             if isinstance(value, int) and value > 0:
                 max_seq_len = value
@@ -570,6 +570,7 @@ def main():
     parser = argparse.ArgumentParser(description="Base model evaluation")
     parser.add_argument('--eval', type=str, default='core,bpb,sample', help='Comma-separated evaluations to run: core,bpb,sample (default: all)')
     parser.add_argument('--hf-path', type=str, default=None, help='HuggingFace model path (e.g. openai-community/gpt2-xl)')
+    parser.add_argument('--trust-remote-code', action='store_true', help='Allow executing custom model code from the HuggingFace repository')
     parser.add_argument('--foundry-model', type=str, default=None, help='Foundry Local model id/alias for CORE eval')
     parser.add_argument('--foundry-base-url', type=str, default=os.environ.get("FOUNDRY_LOCAL_BASE_URL", "http://127.0.0.1:5273"), help='Foundry Local base URL')
     parser.add_argument('--foundry-api-key', type=str, default=os.environ.get("FOUNDRY_LOCAL_API_KEY", "local"), help='Foundry Local API key')
@@ -577,6 +578,7 @@ def main():
     parser.add_argument('--foundry-timeout', type=int, default=120, help='Foundry HTTP timeout in seconds')
     parser.add_argument('--foundry-load-ttl', type=int, default=600, help='Foundry model load ttl in seconds (<=0 skips auto-load)')
     parser.add_argument('--append-report', action='store_true', help='Append to existing base-model-evaluation report section')
+    parser.add_argument('--output-dir', type=str, default=None, help='Output root for CSVs and reports (default: nanochat base directory)')
     parser.add_argument('--model-tag', type=str, default=None, help='nanochat model tag to identify the checkpoint directory')
     parser.add_argument('--step', type=int, default=None, help='Model step to load (default = last)')
     parser.add_argument('--max-per-task', type=int, default=-1, help='Max examples per CORE task (-1 = all)')
@@ -596,6 +598,8 @@ def main():
         from scripts.base_eval_foundry import run_foundry_eval
         run_foundry_eval(args)
         return
+
+    output_dir = args.output_dir or get_base_dir()
 
     # Distributed / precision setup
     device_type = autodetect_device_type() if args.device_type == '' else args.device_type
@@ -653,7 +657,7 @@ def main():
         model_name = f"foundry-local/{args.foundry_model}"
         model_slug = args.foundry_model.replace("/", "-").replace(":", "-")
     elif is_hf_model:
-        model, tokenizer = load_hf_model(args.hf_path, device)
+        model, tokenizer = load_hf_model(args.hf_path, device, trust_remote_code=args.trust_remote_code)
         sequence_len = model.max_seq_len or 1024
         token_bytes = get_hf_token_bytes(tokenizer, device=device)
         model_name = args.hf_path
@@ -737,8 +741,7 @@ def main():
 
         # Write CSV output
         if ddp_rank == 0:
-            base_dir = get_base_dir()
-            output_csv_path = os.path.join(base_dir, "base_eval", f"{model_slug}.csv")
+            output_csv_path = os.path.join(output_dir, "base_eval", f"{model_slug}.csv")
             write_core_csv(output_csv_path, core_results)
             print0(f"\nResults written to: {output_csv_path}")
             print0(f"CORE metric: {core_results['core_metric']:.4f}")
@@ -761,7 +764,7 @@ def main():
         report_data.append({f"unconditioned {i}": s for i, s in enumerate(unconditioned_samples)})
 
     if args.append_report:
-        base_eval_report = os.path.join(get_base_dir(), "report", "base-model-evaluation.md")
+        base_eval_report = os.path.join(output_dir, "report", "base-model-evaluation.md")
         if os.path.exists(base_eval_report):
             with open(base_eval_report, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -770,7 +773,7 @@ def main():
             if previous_body.strip():
                 report_data = [previous_body] + report_data
 
-    get_report().log(section="Base model evaluation", data=report_data)
+    get_report(report_dir=os.path.join(output_dir, "report")).log(section="Base model evaluation", data=report_data)
 
     compute_cleanup()
 

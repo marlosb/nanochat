@@ -546,6 +546,7 @@ def evaluate_core_foundry(client: FoundryLocalClient, tokenizer, device, max_per
 
 
 def run_foundry_eval(args: argparse.Namespace):
+    output_dir = args.output_dir or get_base_dir()
     eval_modes = set(mode.strip() for mode in args.eval.split(","))
     if eval_modes != {"core"}:
         raise ValueError("Foundry evaluator supports only --eval core")
@@ -582,8 +583,7 @@ def run_foundry_eval(args: argparse.Namespace):
     core_results = evaluate_core_foundry(client, tokenizer, device, max_per_task=args.max_per_task)
 
     if ddp_rank == 0:
-        base_dir = get_base_dir()
-        output_csv_path = os.path.join(base_dir, "base_eval", f"{model_slug}.csv")
+        output_csv_path = os.path.join(output_dir, "base_eval", f"{model_slug}.csv")
         write_core_csv(output_csv_path, core_results)
         print0(f"\nResults written to: {output_csv_path}")
         print0(f"CORE metric: {core_results['core_metric']:.4f}")
@@ -592,12 +592,12 @@ def run_foundry_eval(args: argparse.Namespace):
 
     report_data = [{"model": model_name, "CORE metric": core_results["core_metric"]}, core_results["centered_results"]]
     if args.append_report:
-        base_eval_report = os.path.join(get_base_dir(), "report", "base-model-evaluation.md")
+        base_eval_report = os.path.join(output_dir, "report", "base-model-evaluation.md")
         if os.path.exists(base_eval_report):
             with open(base_eval_report, "r", encoding="utf-8") as f:
                 lines = f.readlines()
             previous_body = "".join(lines[3:]) if len(lines) >= 3 else ""
             if previous_body.strip():
                 report_data = [previous_body] + report_data
-    get_report().log(section="Base model evaluation", data=report_data)
+    get_report(report_dir=os.path.join(output_dir, "report")).log(section="Base model evaluation", data=report_data)
     compute_cleanup()

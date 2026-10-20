@@ -1,6 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
+for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
+
 set "PYTHON=python"
 set "EVAL=core"
 set "MAX_PER_TASK=-1"
@@ -72,7 +74,7 @@ goto usage_err
 
 :args_done
 if not defined MODELS (
-    set "MODELS=openai-community/gpt2 Polygl0t/Tucano2-0.6B-Base Polygl0t/Tucano2-qwen-1.5B-Base TucanoBR/Tucano-630m TucanoBR/Tucano-1b1"
+    set "MODELS=openai-community/gpt2 Polygl0t/Tucano2-0.6B-Base Polygl0t/Tucano2-qwen-1.5B-Base TucanoBR/Tucano-630m TucanoBR/Tucano-1b1 marlosb/ArthurFriedenreich marlosb/CharlesMiller"
 )
 set "MODELS=%MODELS:,= %"
 
@@ -80,7 +82,6 @@ if defined NANOCHAT_BASE_DIR_LOCAL (
     set "NANOCHAT_BASE_DIR=%NANOCHAT_BASE_DIR_LOCAL%"
 )
 
-for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
 pushd "%REPO_ROOT%" >nul || (
     echo Failed to enter repository root: "%REPO_ROOT%"
     exit /b 1
@@ -88,7 +89,9 @@ pushd "%REPO_ROOT%" >nul || (
 
 for %%M in (%MODELS%) do (
     echo [%DATE% %TIME%] model running - %%M
-    set "CMD=%PYTHON% -m scripts.base_eval --eval %EVAL% --hf-path %%M --max-per-task %MAX_PER_TASK%"
+    set "CMD=%PYTHON% -m scripts.base_eval --eval %EVAL% --hf-path %%M --max-per-task %MAX_PER_TASK% --append-report"
+    if "%%M"=="marlosb/ArthurFriedenreich" set "CMD=!CMD! --trust-remote-code"
+    if "%%M"=="marlosb/CharlesMiller" set "CMD=!CMD! --trust-remote-code"
     if defined DEVICE_TYPE set "CMD=!CMD! --device-type %DEVICE_TYPE%"
 
     if "!DRY_RUN!"=="1" (
@@ -126,6 +129,8 @@ echo   --models "^<m1 m2 ...^>"      Space- or comma-separated HF model list
 echo   --stop-on-error               Stop on first failing model
 echo   --dry-run                     Print commands without executing
 echo   -h, --help                    Show this help
+echo.
+echo ArthurFriedenreich and CharlesMiller execute custom code from their HF repositories.
 exit /b 0
 
 :usage_err
