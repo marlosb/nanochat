@@ -2,13 +2,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON=python
+PYTHON=.venv/bin/python
 EVAL=core
 MAX_PER_TASK=-1
 DEVICE_TYPE=cuda
 OUTPUT_DIR=
 STOP_ON_ERROR=0
 DRY_RUN=0
+SKIP_SYNC=0
 OVERALL_RC=0
 STOP_LAUNCHING=0
 MODELS=(
@@ -29,7 +30,8 @@ Runs up to two Hugging Face models concurrently on the same GPU.
 Uses CORE and all examples by default. Requires Bash 4 or newer.
 
 Options:
-  --python <exe>              Python executable. Default: python
+  --python <exe>              Python executable. Default: .venv/bin/python
+  --skip-sync                 Skip automatic uv sync --extra gpu --group dev
   --eval <modes>              Evaluations: core,bpb,sample. Default: core
   --max-per-task <n>          Max examples per CORE task. Default: -1 (all)
   --device-type <type>        cuda|cpu|mps. Default: cuda
@@ -83,6 +85,10 @@ while (($#)); do
             DRY_RUN=1
             shift
             ;;
+        --skip-sync)
+            SKIP_SYNC=1
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             usage >&2
@@ -92,8 +98,27 @@ while (($#)); do
 done
 
 cd -- "$REPO_ROOT"
+if ((SKIP_SYNC == 0)); then
+    if ((DRY_RUN)); then
+        echo "[dry-run] uv sync --extra gpu --group dev"
+    else
+        if ! command -v uv >/dev/null 2>&1; then
+            echo "uv is required for environment setup. Install uv or use --skip-sync --python <exe>." >&2
+            exit 127
+        fi
+        echo "[setup] uv sync --extra gpu --group dev"
+        uv sync --extra gpu --group dev
+    fi
+fi
+if ((DRY_RUN == 0)) && ! command -v -- "$PYTHON" >/dev/null 2>&1; then
+    echo "Python executable not found or not executable: $PYTHON (repository: $REPO_ROOT)" >&2
+    echo "Create the environment with: uv sync --extra gpu --group dev" >&2
+    echo "Or pass --python with the path to an existing Python executable." >&2
+    exit 127
+fi
 OUTPUT_DIR="${OUTPUT_DIR:-${NANOCHAT_BASE_DIR:-$HOME/.cache/nanochat}/parallel_eval}"
 declare -A ACTIVE=()
+declare -A LOGS=()
 NEXT=0
 
 cleanup() {
@@ -119,6 +144,8 @@ while ((NEXT < ${#MODELS[@]} || ${#ACTIVE[@]} > 0)); do
             unset 'ACTIVE[$pid]'
             if ((rc != 0)); then
                 echo "[$(date '+%F %T')] model failed - $model (exit $rc)" >&2
+                echo "Last 20 lines of ${LOGS[$pid]}:" >&2
+                tail -n 20 -- "${LOGS[$pid]}" >&2
                 if ((OVERALL_RC == 0)); then
                     OVERALL_RC=$rc
                 fi
@@ -128,6 +155,7 @@ while ((NEXT < ${#MODELS[@]} || ${#ACTIVE[@]} > 0)); do
             else
                 echo "[$(date '+%F %T')] model done - $model"
             fi
+            unset 'LOGS[$pid]'
         fi
     done
 
@@ -154,7 +182,9 @@ while ((NEXT < ${#MODELS[@]} || ${#ACTIVE[@]} > 0)); do
             mkdir -p -- "$model_output"
             echo "[$(date '+%F %T')] model running - $model | log: $model_output/evaluation.log"
             "${cmd[@]}" > "$model_output/evaluation.log" 2>&1 &
-            ACTIVE[$!]="$model"
+            pid=$!
+            ACTIVE[$pid]="$model"
+            LOGS[$pid]="$model_output/evaluation.log"
         fi
         NEXT=$((NEXT + 1))
     done

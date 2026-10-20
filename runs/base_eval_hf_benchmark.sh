@@ -2,12 +2,13 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON=python
+PYTHON=.venv/bin/python
 EVAL=core
 MAX_PER_TASK=-1
 DEVICE_TYPE=
 STOP_ON_ERROR=0
 DRY_RUN=0
+SKIP_SYNC=0
 OVERALL_RC=0
 MODELS=(
     openai-community/gpt2
@@ -26,7 +27,8 @@ Usage: bash runs/base_eval_hf_benchmark.sh [options]
 Runs Hugging Face models sequentially, using CORE and all examples by default.
 
 Options:
-  --python <exe>              Python executable. Default: python
+  --python <exe>              Python executable. Default: .venv/bin/python
+  --skip-sync                 Skip automatic uv sync --extra gpu --group dev
   --eval <modes>              Evaluations: core,bpb,sample. Default: core
   --max-per-task <n>          Max examples per CORE task. Default: -1 (all)
   --device-type <type>        cuda|cpu|mps (default: autodetect)
@@ -76,6 +78,10 @@ while (($#)); do
             DRY_RUN=1
             shift
             ;;
+        --skip-sync)
+            SKIP_SYNC=1
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             usage >&2
@@ -85,6 +91,24 @@ while (($#)); do
 done
 
 cd -- "$REPO_ROOT"
+if ((SKIP_SYNC == 0)); then
+    if ((DRY_RUN)); then
+        echo "[dry-run] uv sync --extra gpu --group dev"
+    else
+        if ! command -v uv >/dev/null 2>&1; then
+            echo "uv is required for environment setup. Install uv or use --skip-sync --python <exe>." >&2
+            exit 127
+        fi
+        echo "[setup] uv sync --extra gpu --group dev"
+        uv sync --extra gpu --group dev
+    fi
+fi
+if ((DRY_RUN == 0)) && ! command -v -- "$PYTHON" >/dev/null 2>&1; then
+    echo "Python executable not found or not executable: $PYTHON (repository: $REPO_ROOT)" >&2
+    echo "Create the environment with: uv sync --extra gpu --group dev" >&2
+    echo "Or pass --python with the path to an existing Python executable." >&2
+    exit 127
+fi
 for model in "${MODELS[@]}"; do
     echo "[$(date '+%F %T')] model running - $model"
     cmd=("$PYTHON" -m scripts.base_eval --eval "$EVAL" --hf-path "$model"

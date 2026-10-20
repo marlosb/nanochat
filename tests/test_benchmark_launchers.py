@@ -12,6 +12,24 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS = REPO_ROOT / "runs"
 
 
+@pytest.fixture(autouse=True)
+def fake_uv(tmp_path, monkeypatch):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    uv = tools / "uv"
+    uv.write_text(
+        '#!/usr/bin/env bash\n'
+        'printf "%s\\n" "$*" >> "$BENCHMARK_UV_CALLS"\n'
+        'exit "${BENCHMARK_UV_EXIT:-0}"\n',
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    calls = tmp_path / "uv calls.txt"
+    monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("BENCHMARK_UV_CALLS", str(calls))
+    return calls
+
+
 @pytest.fixture
 def bash():
     candidates = []
@@ -58,7 +76,8 @@ def test_default_models_and_scoped_remote_code(bash, launcher, tmp_path):
             cwd=tmp_path, capture_output=True, text=True, timeout=30,
         )
     assert result.returncode == 0, result.stderr + result.stdout
-    commands = [line for line in result.stdout.splitlines() if line.startswith("[dry-run]")]
+    commands = [line for line in result.stdout.splitlines()
+                if line.startswith("[dry-run]") and " -m scripts.base_eval " in line]
     assert len(commands) == 7
     assert "--hf-path openai-community/gpt2" in commands[0]
     assert "--hf-path marlosb/ArthurFriedenreich" in commands[-2]
@@ -120,6 +139,48 @@ def test_invalid_arguments(bash, args, script):
     assert result.stderr
 
 
+@pytest.mark.parametrize("script", [
+    "base_eval_hf_benchmark.sh",
+    "base_eval_hf_benchmark_parallel.sh",
+])
+def test_missing_python_fails_before_scheduling(bash, tmp_path, script):
+    missing = str(tmp_path / "missing python")
+    result = run_bash(bash, "--python", missing, script=script)
+    assert result.returncode == 127
+    assert "Python executable not found or not executable" in result.stderr
+    assert missing in result.stderr
+    assert "uv sync --extra gpu --group dev" in result.stderr
+    assert "model running" not in result.stdout
+
+
+@pytest.mark.parametrize("script", [
+    "base_eval_hf_benchmark.sh",
+    "base_eval_hf_benchmark_parallel.sh",
+])
+def test_sync_failure_stops_before_scheduling(bash, fake_uv, script):
+    env = dict(os.environ, BENCHMARK_UV_EXIT="19")
+    result = run_bash(bash, env=env, script=script)
+    assert result.returncode == 19, result.stderr + result.stdout
+    assert fake_uv.read_text().splitlines() == ["sync --extra gpu --group dev"]
+    assert "model running" not in result.stdout
+
+
+@pytest.mark.parametrize("script", [
+    "base_eval_hf_benchmark.sh",
+    "base_eval_hf_benchmark_parallel.sh",
+])
+def test_skip_sync_and_dry_run_do_not_install(bash, tmp_path, fake_uv, script):
+    result = run_bash(bash, "--dry-run", script=script)
+    assert result.returncode == 0
+    assert "[dry-run] uv sync --extra gpu --group dev" in result.stdout
+    assert not fake_uv.exists()
+    result = run_bash(
+        bash, "--skip-sync", "--python", str(tmp_path / "missing"), script=script,
+    )
+    assert result.returncode == 127
+    assert not fake_uv.exists()
+
+
 @pytest.fixture
 def parallel_evaluator(tmp_path):
     stub = tmp_path / "evaluator.py"
@@ -158,7 +219,7 @@ def parallel_evaluator(tmp_path):
     return shim, env
 
 
-def test_parallel_limit_rolling_schedule_and_isolated_logs(bash, tmp_path, parallel_evaluator):
+def test_parallel_limit_rolling_schedule_and_isolated_logs(bash, tmp_path, parallel_evaluator, fake_uv):
     shim, env = parallel_evaluator
     output = tmp_path / "parallel output"
     base = tmp_path / "shared data"
@@ -170,6 +231,7 @@ def test_parallel_limit_rolling_schedule_and_isolated_logs(bash, tmp_path, paral
         script="base_eval_hf_benchmark_parallel.sh",
     )
     assert result.returncode == 0, result.stderr + result.stdout
+    assert fake_uv.read_text().splitlines() == ["sync --extra gpu --group dev"]
     timings = [json.loads(path.read_text()) for path in output.glob("*/timing.json")]
     assert len(timings) == 4
     by_model = {timing["model"]: timing for timing in timings}
@@ -205,6 +267,7 @@ def test_parallel_failure_waits_for_active_models(bash, tmp_path, parallel_evalu
         bash, *args, env=env, script="base_eval_hf_benchmark_parallel.sh",
     )
     assert result.returncode == 7, result.stderr + result.stdout
+    assert "evaluated fail/model" in result.stderr
     timings = [json.loads(path.read_text()) for path in output.glob("*/timing.json")]
     models = {timing["model"] for timing in timings}
     assert {"fail/model", "slow/model"} <= models

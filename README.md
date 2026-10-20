@@ -124,15 +124,20 @@ The benchmark evaluates seven Hugging Face models: GPT-2, Tucano2-0.6B-Base,
 Tucano2-qwen-1.5B-Base, Tucano-630m, Tucano-1b1, marlosb/ArthurFriedenreich,
 and marlosb/CharlesMiller. Local checkpoints are not included in this benchmark.
 
-With the evaluation dependencies installed (`uv sync --extra gpu --group dev`),
-run it on Linux with:
+With `uv` installed, run it on Linux with:
 
 ```bash
-bash runs/base_eval_hf_benchmark.sh --python .venv/bin/python --device-type cuda
+bash runs/base_eval_hf_benchmark.sh --device-type cuda
 ```
 
-On Windows, use `runs\base_eval_hf_benchmark.bat` with the same options.
-Both launchers default to CORE over all examples, run models sequentially, and
+Both Bash launchers automatically run `uv sync --extra gpu --group dev` once
+before evaluation and default to `.venv/bin/python`. Setup failure stops the
+run before any models launch. Use `--skip-sync --python <exe>` for a separately
+prepared environment; `--dry-run` only prints the setup and evaluation commands.
+
+On Windows, install dependencies separately and use
+`runs\base_eval_hf_benchmark.bat --python .venv\Scripts\python.exe`.
+The sequential launchers default to CORE over all examples and
 continue after a model fails while returning a nonzero final exit code.
 Use `--models "owner/model1,owner/model2"` to select models, `--max-per-task 100`
 for a shorter run, `--stop-on-error` to stop after a failure, or `--dry-run` to
@@ -152,7 +157,7 @@ To run up to two models concurrently on one GPU, use the parallel launcher
 (Bash 4 or newer):
 
 ```bash
-bash runs/base_eval_hf_benchmark_parallel.sh --python .venv/bin/python
+bash runs/base_eval_hf_benchmark_parallel.sh
 ```
 
 It uses CUDA by default, shares cached weights and evaluation data, and starts
